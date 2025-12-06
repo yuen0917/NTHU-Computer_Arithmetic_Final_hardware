@@ -23,6 +23,17 @@ module conv2d_layer1 #(
     output reg [7:0] out_conv6,
     output reg [7:0] out_conv7
 );
+    // if you want to use the clog2 function for verilog2001, you can use the following code
+    // function integer clog2_func;
+    // input integer value;
+    // begin
+    //     value = value - 1;
+    //     for (clog2_func = 0; value > 0; clog2_func = clog2_func + 1) begin
+    //         value = value >> 1;
+    //     end
+    // end
+    // endfunction
+
     localparam KERNEL_SIZE = 3 * 3;
     localparam WEIGHT_SIZE = CH_IN * CH_OUT * KERNEL_SIZE;
     localparam TOTAL_W     = IMG_W + 2 * PADDING;
@@ -99,60 +110,60 @@ module conv2d_layer1 #(
     endgenerate
 
     // ------------------------------------------------------------
-    // for window valid signal
+    // for window valid signal (correction counter logic)
     // ------------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             col_cnt <= 0;
             row_cnt <= 0;
         end else if (in_valid) begin
-            if (col_cnt == IMG_W - 1) begin
+            // correction: here must use TOTAL_W to judge the line change, because the input stream contains Padding
+            if (col_cnt == TOTAL_W - 1) begin
                 col_cnt <= 0;
-                row_cnt <= (row_cnt == IMG_H - 1) ? 0 : row_cnt + 1;
+                // correction: Row must also count to TOTAL_H (including Padding rows)
+                row_cnt <= (row_cnt == TOTAL_H - 1) ? 0 : row_cnt + 1;
             end else begin
                 col_cnt <= col_cnt + 1;
             end
         end
     end
 
-    // 2. Check whether the input is valid (Raw Valid)
-    // We need to determine whether the current (row, col) input makes the 3x3 window a valid position.
-    //
-    // The current input position corresponds to the bottom-right of the window (Win22).
-    // The valid window center (Win11) must lie inside the image area (0~27).
-    // Since Win22 is at (col, row), Win11 is at (col-1, row-1).
-    // Considering pipeline latency, line buffer output is only valid when row >= 1 (two previous rows available).
-    // Also, col must be >= 2 (window generator needs 2 extra cycles to fill Win00~Win02).
+    // ------------------------------------------------------------
+    // correction: Valid determination logic
+    // ------------------------------------------------------------
+    wire [COL_CNT_W:0] next_col_cnt;
+    assign next_col_cnt = (col_cnt == TOTAL_W - 1) ? 0 : col_cnt + 1;
+
+    wire col_valid_region;
+    wire row_valid_region;
+
+    // 1. use next_col_cnt to ensure that the Valid and the data output of the Line Buffer are synchronized
+    //    so that the Valid will be High when the first piece of data comes in
+    assign col_valid_region = (next_col_cnt >= PADDING) && (next_col_cnt < IMG_W + PADDING);
+
+    // Row keep the original (because the update of Row is slower, and the TB behavior has verified that Row is correct)
+    assign row_valid_region = (row_cnt >= 1) && (row_cnt <= IMG_H);
+
     wire input_region_valid;
-    assign input_region_valid = (row_cnt >= 1) && (col_cnt >= 1);
+    assign input_region_valid = row_valid_region && col_valid_region;
 
     // 3. Shift register latency compensation
-    // There are 4 pipeline stages: LineBuffer(1) + Window(1) + MAC(1) + Output(1) = 4 cycles.
-    // However, input_region_valid is generated based on the current input timing.
-    // The window generator has 1 cycle shift latency, and the line buffer output has 1 cycle latency.
-    // Detailed timing:
-    // T=0: Input (1,2) -> meets valid condition
-    // T+1: Line buffer outputs r0, r1, r2
-    // T+2: Window generator outputs winXX (Win11 corresponds to center)
-    // T+3: MAC outputs the accumulated sum
-    // T+4: Convolution module outputs the final result
-    // Therefore, input_region_valid must be delayed by 4 cycles.
 
-    reg [3:0] valid_pipe;      
+    reg [4:0] valid_pipe;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             valid_pipe <= 0;
         end else if (in_valid) begin
             // Shift only when in_valid is high, because the entire pipeline is driven by in_valid
             // Push input_region_valid into the shift register
-            valid_pipe <= {valid_pipe[2:0], input_region_valid};
+            valid_pipe <= {valid_pipe[3:0], input_region_valid};
         end else begin
             // If in_valid is deasserted (e.g., waiting), the pipeline should also stop updating the valid status.
             // Depending on your design, you may want to insert 0 here (if the pipeline is flushed).
             // Here we assume a stall mechanism:
-            valid_pipe <= {valid_pipe[2:0], 1'b0}; 
+            valid_pipe <= {valid_pipe[3:0], 1'b0};
         end
-    end                
+    end
 
     // ------------------------------------------------------------
     // for mac
@@ -200,6 +211,20 @@ module conv2d_layer1 #(
             end
         end else begin
             out_valid <= 1'b0;
+        end
+    end
+
+    // ============================================================
+    // DEBUG BLOCK: Print Window Content
+    // ============================================================
+    always @(posedge clk) begin
+        // when the control signal thinks that the current window is valid, print the content
+        if (input_region_valid) begin
+            $display("[RTL DEBUG] Time=%0t | Cnt=(c:%0d, r:%0d)", $time, col_cnt, row_cnt);
+            $display("    Window Row 0: %d %d %d", win00, win01, win02);
+            $display("    Window Row 1: %d %d %d", win10, win11, win12);
+            $display("    Window Row 2: %d %d %d", win20, win21, win22);
+            $display("    -------------------------");
         end
     end
 endmodule

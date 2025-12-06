@@ -120,15 +120,43 @@
   - 支援權重檔案讀取
   - 可用於驗證卷積運算正確性
 
+#### 9. `conv2d_layer2.v` ⭐ **新增**
+
+- **功能**: 第二個卷積層（8→16 通道）
+- **特性**:
+  - 支援 8 個並行輸入通道（對應第一層的 8 個輸出）
+  - 輸出 16 個通道
+  - 使用多通道 line buffer 和 window generator
+  - 包含 128 個 MAC 單元（16 輸出通道 × 8 輸入通道）
+  - 使用加法樹累加多通道結果
+  - 權重索引：`weight_data[(out_ch * CH_IN + in_ch) * KERNEL_SIZE + kernel_pos]`
+- **輸入**: 8 個並行的 8-bit 通道資料
+- **輸出**: 16 個通道的 8-bit 卷積結果
+- **狀態**: 基本架構已完成，SELU 激活函數待整合
+
+#### 10. `selu_lut_act.v` ⭐ **新增**
+
+- **功能**: SELU 激活函數的查表（LUT）實作
+- **特性**:
+  - 使用 256-entry LUT 實現 SELU 函數
+  - 支援有符號 8-bit 輸入（-128 到 127）
+  - 2 週期 pipeline（讀取 LUT + 輸出）
+  - 從檔案 `selu_lut.hex` 讀取 LUT 資料
+- **用途**: 用於第二層卷積的 SELU 激活函數
+
 ### 測試平台
 
-#### `conv2d_layer1_tb.v`
+#### `conv2d_layer1_tb.v` ⭐ **已更新**
 
 - **功能**: 第一個卷積層的測試平台
 - **特性**:
   - 使用 4×4 測試影像
   - 包含完整的時序測試
   - 支援權重覆寫功能
+  - **新增**: 支援多通道驗證（所有 8 個通道）
+  - **新增**: 支援負數權重測試（驗證 ReLU 功能）
+  - **新增**: 完整的 Golden Model 計算（包含 ReLU 和飽和處理）
+  - **新增**: 可配置的權重參數（`WEIGHT_CH0` ~ `WEIGHT_CH7`）
 
 ## 激活函數
 
@@ -178,21 +206,32 @@ p_i = exp(z_i - m) / Σ_j exp(z_j - m)
    - [x] ReLU 激活函數整合
    - [x] 量化與飽和處理
    - [x] 測試平台（conv2d_layer1_tb.v）
+   - [x] 多通道驗證功能
+   - [x] 負數權重測試支援
 
-3. **池化層**
+3. **第二層卷積（Conv2d Layer 2）** ⭐ **新增**
+   - [x] Conv2d(8→16) 基本架構實作
+   - [x] 多通道輸入處理（8 個並行輸入通道）
+   - [x] 多通道 MAC 連接（128 個 MAC 單元）
+   - [x] 加法樹累加邏輯
+   - [x] SELU LUT 模組實作（selu_lut_act.v）
+   - [ ] SELU 激活函數整合到第二層
+   - [ ] 第二層測試平台
+
+4. **池化層**
    - [x] Max Pooling 單元（2×2）
    - [x] Global Average Pooling 單元
 
-4. **全連接層**
+5. **全連接層**
    - [x] FC(32→10) 模組
    - [x] Softmax（argmax 近似）實作
 
 ### 🚧 進行中 / 待完成
 
 1. **第二層卷積（Conv2d Layer 2）**
-   - [ ] Conv2d(8→16) 模組實作
-   - [ ] SELU 激活函數實作與整合
-   - [ ] 多通道輸入處理（8 通道）
+   - [ ] SELU 激活函數整合到卷積層
+   - [ ] 第二層測試平台開發
+   - [ ] 權重檔案準備（conv2_selu.txt）
 
 2. **第三層卷積（Conv2d Layer 3）**
    - [ ] Conv2d(16→32) 模組實作
@@ -224,8 +263,10 @@ p_i = exp(z_i - m) / Σ_j exp(z_j - m)
 CA_final/
 ├── README.md                    # 本檔案
 ├── conv2d_layer1.v              # 第一層卷積（1→8, ReLU）
-├── conv2d_layer1_tb.v           # 第一層卷積測試平台
+├── conv2d_layer1_tb.v           # 第一層卷積測試平台（已更新）
+├── conv2d_layer2.v              # 第二層卷積（8→16, SELU）⭐ 新增
 ├── conv2d_test.v                # 卷積層測試模組（狀態機版本）
+├── selu_lut_act.v               # SELU 激活函數 LUT 模組 ⭐ 新增
 ├── fc_softmax_unit.v            # 全連接層與 Softmax
 ├── global_avg_pool_unit.v       # 全域平均池化單元
 ├── line_buffer.v                # 行緩衝器
@@ -249,6 +290,8 @@ vvp conv2d_layer1_tb
 ### 權重檔案
 
 - `conv1_relu.txt`: 第一層卷積權重（十六進位格式）
+- `conv2_selu.txt`: 第二層卷積權重（十六進位格式，待準備）
+- `selu_lut.hex`: SELU 激活函數查表（256 entries）
 - `weights.txt`: 全連接層權重
 - `biases.txt`: 全連接層偏置
 
@@ -277,7 +320,35 @@ vvp conv2d_layer1_tb
 - V. Dumoulin and F. Visin, "A guide to convolution arithmetic for deep learning," arXiv: 1603.07285, 2016. [Online]. Available: https://arxiv.org/abs/1603.07285. doi:10.48550/arXiv.1603.07285
 - MNIST 資料集: http://yann.lecun.com/exdb/mnist/
 
+## 更新記錄
+
+### 2024年12月（最新更新）
+
+- ✅ **第二層卷積架構實作**：完成 `conv2d_layer2.v` 基本架構
+  - 實作 8 輸入通道並行處理
+  - 實作 16 輸出通道 MAC 連接
+  - 實作多通道加法樹累加邏輯
+
+- ✅ **SELU 激活函數模組**：完成 `selu_lut_act.v`
+  - 使用 LUT 方式實現 SELU 函數
+  - 支援有符號 8-bit 輸入輸出
+
+- ✅ **測試平台增強**：更新 `conv2d_layer1_tb.v`
+  - 新增多通道驗證功能（驗證所有 8 個通道）
+  - 新增負數權重測試支援
+  - 完善 Golden Model 計算（包含 ReLU 和飽和處理）
+  - 新增可配置權重參數
+
+### 之前版本
+
+- 第一層卷積層實作完成
+- 基礎模組（Line Buffer, Window Generator, MAC）實作完成
+- 池化層和全連接層實作完成
+
 ## 授權
 
 本專案為學術研究用途。
 
+---
+
+**最後更新時間**: 2024/12/06 22:00
