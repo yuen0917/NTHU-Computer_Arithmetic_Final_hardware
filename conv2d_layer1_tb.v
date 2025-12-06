@@ -50,7 +50,8 @@ module conv2d_layer1_tb;
     wire [7:0]   out_conv7;
 
     // 方便迴圈存取的 Array
-    wire [7:0]   out_conv_array [0:7];
+    wire [7:0] out_conv_array [0:7];
+
     assign out_conv_array[0] = out_conv0;
     assign out_conv_array[1] = out_conv1;
     assign out_conv_array[2] = out_conv2;

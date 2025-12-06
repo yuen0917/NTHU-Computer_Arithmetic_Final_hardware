@@ -1,8 +1,8 @@
-// ------------------------------------------------------------
+// ============================================================
 // 2D Convolution Module with 16 channels (8 input channels)
 // Input: 8 parallel channels from layer1 output
 // Output: 16 channels with SELU activation function
-// ------------------------------------------------------------
+// ============================================================
 module conv2d_layer2 #(
   parameter PADDING     = 1,
   parameter IMG_W       = 28,
@@ -82,8 +82,21 @@ module conv2d_layer2 #(
     initial begin
       $readmemh("conv2_selu.txt", weight_data);
     end
-
+    // ============================================================
+    // Line Buffers & Window Generators (same as Layer 1)
+    // ============================================================
     genvar i;
+
+    wire [7:0] win00 [0:CH_IN-1];
+    wire [7:0] win01 [0:CH_IN-1];
+    wire [7:0] win02 [0:CH_IN-1];
+    wire [7:0] win10 [0:CH_IN-1];
+    wire [7:0] win11 [0:CH_IN-1];
+    wire [7:0] win12 [0:CH_IN-1];
+    wire [7:0] win20 [0:CH_IN-1];
+    wire [7:0] win21 [0:CH_IN-1];
+    wire [7:0] win22 [0:CH_IN-1];
+
     generate
       for(i = 0; i < CH_IN; i = i + 1) begin
         line_buffer #(
@@ -98,21 +111,6 @@ module conv2d_layer2 #(
           .out_row1(r1[i]),
           .out_row2(r2[i])
         );
-      end
-    endgenerate
-
-    wire [7:0] win00 [0:CH_IN-1];
-    wire [7:0] win01 [0:CH_IN-1];
-    wire [7:0] win02 [0:CH_IN-1];
-    wire [7:0] win10 [0:CH_IN-1];
-    wire [7:0] win11 [0:CH_IN-1];
-    wire [7:0] win12 [0:CH_IN-1];
-    wire [7:0] win20 [0:CH_IN-1];
-    wire [7:0] win21 [0:CH_IN-1];
-    wire [7:0] win22 [0:CH_IN-1];
-
-    generate
-      for(i = 0; i < CH_IN; i = i + 1) begin
         window_generator u_wg (
           .clk(clk),
           .rst_n(rst_n),
@@ -133,6 +131,9 @@ module conv2d_layer2 #(
       end
     endgenerate
 
+    // ============================================================
+    // MAC Units for each output channel
+    // ============================================================
     // MAC outputs for each input channel and output channel
     // out_mac_per_ch[output_channel][input_channel]
     wire signed [31:0] out_mac_per_ch [0:CH_OUT-1][0:CH_IN-1];
@@ -140,10 +141,6 @@ module conv2d_layer2 #(
     // Final MAC output for each output channel (sum of all input channels)
     wire signed [31:0] out_mac [0:CH_OUT-1];
 
-    // ------------------------------------------------------------
-    // MAC units: For each output channel, we need CH_IN mac_3x3 units
-    // Weight indexing: weight_data[(out_ch * CH_IN + in_ch) * KERNEL_SIZE + kernel_pos]
-    // ------------------------------------------------------------
     genvar out_ch, in_ch;
     generate
       // For each output channel
@@ -172,10 +169,10 @@ module conv2d_layer2 #(
       end
     endgenerate
 
-    // ------------------------------------------------------------
+    // ============================================================
     // Sum all input channels for each output channel
     // Using generate to create adder tree for better synthesis
-    // ------------------------------------------------------------
+    // ============================================================
     generate
       for(out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin
         // Create adder tree: sum all CH_IN channels
@@ -195,114 +192,120 @@ module conv2d_layer2 #(
       end
     endgenerate
 
-    // ------------------------------------------------------------
-    // Window valid signal (similar to layer1)
-    // ------------------------------------------------------------
+    // ============================================================
+    // for window valid signal (correction counter logic)
+    // ============================================================
     always @(posedge clk or negedge rst_n) begin
       if (!rst_n) begin
-        col_cnt <= 0;
-        row_cnt <= 0;
-      end else if (in_valid) begin
-        if (col_cnt == TOTAL_W - 1) begin
           col_cnt <= 0;
-          row_cnt <= (row_cnt == TOTAL_H - 1) ? 0 : row_cnt + 1;
-        end else begin
-          col_cnt <= col_cnt + 1;
-        end
+          row_cnt <= 0;
+      end else if (in_valid) begin
+          // correction: here must use TOTAL_W to judge the line change, because the input stream contains Padding
+          if (col_cnt == TOTAL_W - 1) begin
+              col_cnt <= 0;
+              // correction: Row must also count to TOTAL_H (including Padding rows)
+              row_cnt <= (row_cnt == TOTAL_H - 1) ? 0 : row_cnt + 1;
+          end else begin
+              col_cnt <= col_cnt + 1;
+          end
       end
     end
+
+    // ============================================================
+    // Window valid signal (similar to layer1)
+    // ============================================================
+    wire [COL_CNT_W:0] next_col_cnt;
+    assign next_col_cnt = (col_cnt == TOTAL_W - 1) ? 0 : col_cnt + 1;
 
     wire col_valid_region;
     wire row_valid_region;
     wire input_region_valid;
 
-    assign col_valid_region = (col_cnt >= 1) && (col_cnt <= IMG_W);
+    // 1. use next_col_cnt to ensure that the Valid and the data output of the Line Buffer are synchronized
+    //    so that the Valid will be High when the first piece of data comes in
+    assign col_valid_region = (next_col_cnt >= PADDING) && (next_col_cnt < IMG_W + PADDING);
+
+    // Row keep the original (because the update of Row is slower, and the TB behavior has verified that Row is correct)
     assign row_valid_region = (row_cnt >= 1) && (row_cnt <= IMG_H);
+
     assign input_region_valid = row_valid_region && col_valid_region;
 
-    // Pipeline delay compensation (4 cycles)
-    reg [3:0] valid_pipe;
+    // ============================================================
+    // Pipeline Compensation (Stage 1: Conv Latency)
+    // ============================================================
+    // The latency of the convolution: LB(1) + Win(1) + MAC(1) + Adder(0) = 3 cycles (Data Ready)
+    // We need to send conv_valid to the SELU module at the correct time
+    // Note: Layer 1 uses [4] because it includes Output Reg.
+    // Here we send the data to SELU before it enters the Output Reg.
+    // Data Path: Input -> LB(T1) -> Win(T2) -> MAC/Adder(T3) -> Quantize -> SELU
+    // So we need to delay 3 cycles for the input valid of SELU
+
+    reg [3:0] conv_valid_pipe; // use 4 bit for safety
     always @(posedge clk or negedge rst_n) begin
-      if (!rst_n) begin
-        valid_pipe <= 0;
-      end else if (in_valid) begin
-        valid_pipe <= {valid_pipe[2:0], input_region_valid};
-      end else begin
-        valid_pipe <= {valid_pipe[2:0], 1'b0};
-      end
+      if (!rst_n) conv_valid_pipe <= 0;
+      else if (in_valid) conv_valid_pipe <= {conv_valid_pipe[2:0], input_region_valid};
+      else conv_valid_pipe <= {conv_valid_pipe[2:0], 1'b0};
     end
 
-    // ------------------------------------------------------------
-    // Quantization and SELU activation
-    // ------------------------------------------------------------
-    wire signed [31:0] tmp_mac [0:CH_OUT - 1];
-    reg         [ 7:0] sat_val [0:CH_OUT - 1];
+    // This is the Valid signal to send to SELU
+    wire valid_to_selu = conv_valid_pipe[2];
 
-    // Quantization shift
+    // ============================================================
+    // Quantization & SELU Integration
+    // ============================================================
+    wire signed [7:0] selu_in [0:CH_OUT-1];
+    wire signed [7:0] selu_out [0:CH_OUT-1];
+    wire              selu_out_valid [0:CH_OUT-1]; // each channel has valid, theoretically the same
+
     generate
-      for (out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin
-        assign tmp_mac[out_ch] = (out_mac[out_ch] > 0) ? out_mac[out_ch] >>> QUANT_SHIFT : 0;
+      for (out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin : SELU_GEN
+        // Quantization (32-bit -> 8-bit)
+        // Note: SELU LUT accepts signed 8-bit (-128 ~ 127)
+        // Here we need to do Clipping to prevent overflow
+        wire signed [31:0] scaled_mac = out_mac[out_ch] >>> QUANT_SHIFT;
+
+        assign selu_in[out_ch] = (scaled_mac > 127)  ? 8'sd127 :
+                                 (scaled_mac < -128) ? -8'sd128 :
+                                 scaled_mac[7:0];
+
+        // Instantiate SELU LUT
+        selu_lut_act u_selu (
+            .clk(clk),
+            .rst_n(rst_n),
+            .in_valid(valid_to_selu),
+            .in_data(selu_in[out_ch]),
+            .out_valid(selu_out_valid[out_ch]),
+            .out_data(selu_out[out_ch])
+        );
       end
     endgenerate
 
-    // TODO: Implement SELU activation function
-    // SELU(x) = { λx        if x > 0
-    //           { λα(e^x - 1) if x ≤ 0
-    // where λ ≈ 1.0507, α ≈ 1.6733
-    // For now, using ReLU-like behavior (only positive values)
+    // ============================================================
+    // 6. Final Output Assignment
+    // ============================================================
+    // Directly connect the SELU output to the module output
+    // Because SELU has an Output Register inside, so here is wire connection
 
-    // ------------------------------------------------------------
-    // Output assignment
-    // ------------------------------------------------------------
-    integer k;
-    always @(posedge clk or negedge rst_n) begin
-      if (!rst_n) begin
-        out_valid <= 1'b0;
-        out_conv0  <= 0;
-        out_conv1  <= 0;
-        out_conv2  <= 0;
-        out_conv3  <= 0;
-        out_conv4  <= 0;
-        out_conv5  <= 0;
-        out_conv6  <= 0;
-        out_conv7  <= 0;
-        out_conv8  <= 0;
-        out_conv9  <= 0;
-        out_conv10 <= 0;
-        out_conv11 <= 0;
-        out_conv12 <= 0;
-        out_conv13 <= 0;
-        out_conv14 <= 0;
-        out_conv15 <= 0;
-      end else if (in_valid) begin
-        // Saturation
-        for (k = 0; k < CH_OUT; k = k + 1) begin
-          sat_val[k] = (tmp_mac[k] > 255) ? 255 : tmp_mac[k][7:0];
-        end
+    always @(*) begin
+      // Only need to look at the Valid of the 0th channel, because all channels are synchronized
+      out_valid   = selu_out_valid[0];
 
-        out_valid <= valid_pipe[3];
-
-        if (valid_pipe[3]) begin
-          out_conv0  <= sat_val[0];
-          out_conv1  <= sat_val[1];
-          out_conv2  <= sat_val[2];
-          out_conv3  <= sat_val[3];
-          out_conv4  <= sat_val[4];
-          out_conv5  <= sat_val[5];
-          out_conv6  <= sat_val[6];
-          out_conv7  <= sat_val[7];
-          out_conv8  <= sat_val[8];
-          out_conv9  <= sat_val[9];
-          out_conv10 <= sat_val[10];
-          out_conv11 <= sat_val[11];
-          out_conv12 <= sat_val[12];
-          out_conv13 <= sat_val[13];
-          out_conv14 <= sat_val[14];
-          out_conv15 <= sat_val[15];
-        end
-      end else begin
-        out_valid <= 1'b0;
-      end
+      out_conv0   = selu_out[0];
+      out_conv1   = selu_out[1];
+      out_conv2   = selu_out[2];
+      out_conv3   = selu_out[3];
+      out_conv4   = selu_out[4];
+      out_conv5   = selu_out[5];
+      out_conv6   = selu_out[6];
+      out_conv7   = selu_out[7];
+      out_conv8   = selu_out[8];
+      out_conv9   = selu_out[9];
+      out_conv10  = selu_out[10];
+      out_conv11  = selu_out[11];
+      out_conv12  = selu_out[12];
+      out_conv13  = selu_out[13];
+      out_conv14  = selu_out[14];
+      out_conv15  = selu_out[15];
     end
 
 endmodule
