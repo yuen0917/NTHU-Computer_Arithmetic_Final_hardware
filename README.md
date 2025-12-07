@@ -153,10 +153,52 @@
   - 使用多通道 line buffer 和 window generator
   - 包含 512 個 MAC 單元（32 輸出通道 × 16 輸入通道）
   - 使用加法樹累加多通道結果
-  - GELU 激活函數整合（需 gelu_lut_act.v 模組）
+  - GELU 激活函數整合完成
 - **輸入**: 16 個並行的 8-bit 通道資料
 - **輸出**: 32 個通道的 8-bit 卷積結果
-- **狀態**: 基本架構已完成，GELU LUT 模組待實作
+- **狀態**: 已完成並整合 GELU LUT 模組
+
+#### 14. `gelu_lut_act.v` ✅ **已完成**
+
+- **功能**: GELU 激活函數的查表（LUT）實作
+- **特性**:
+  - 使用 256-entry LUT 實現 GELU 函數
+  - 支援有符號 8-bit 輸入（-128 到 127）
+  - 2 週期 pipeline（讀取 LUT + 輸出）
+  - 從檔案 `gelu_lut.txt` 讀取 LUT 資料
+- **用途**: 用於第三層卷積的 GELU 激活函數
+
+#### 15. `conv2d_layer3_tb.v` ✅ **已完成**
+
+- **功能**: 第三層卷積的測試平台
+- **特性**:
+  - 使用 14×14 測試影像
+  - 包含完整的時序測試
+  - 支援權重檔案生成與載入
+  - 完整的 Golden Model 計算（包含 GELU 和飽和處理）
+  - 支援多通道驗證（所有 32 個通道）
+  - 允許 +/- 1 的誤差（GELU LUT 精度差異）
+
+#### 16. `main.v` ✅ **已完成**
+
+- **功能**: CNN 完整系統頂層模組
+- **特性**:
+  - 整合所有 7 個層（3 個卷積層、1 個最大池化層、1 個全域平均池化層、1 個全連接層）
+  - 層間資料流自動連接
+  - 時序同步與控制信號處理
+  - Flatten 層實作（32 通道並行轉串行）
+  - 輸出最終分類結果（0-9）
+- **輸入**: 28×28 灰階影像（串流）
+- **輸出**: 分類結果（class_out: 0-9）和分數（final_score）
+
+#### 17. `main_tb.v` 🚧 **已寫完但未通過測試**
+
+- **功能**: 完整系統的測試平台
+- **特性**:
+  - 從檔案讀取 MNIST 測試影像
+  - 載入所有層的權重檔案
+  - 完整系統功能測試
+  - **狀態**: ⚠️ 測試平台已開發完成，但尚未通過驗證測試
 
 #### 12. `conv2d_layer2_tb.v` ✅ **已完成**
 
@@ -257,8 +299,9 @@ $$p_i = \frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)}$$
    - [x] 多通道輸入處理（16 個並行輸入通道）
    - [x] 多通道 MAC 連接（512 個 MAC 單元）
    - [x] 加法樹累加邏輯
-   - [x] GELU 激活函數整合（gelu_lut_act.v）
-   - [ ] 第三層測試平台（conv2d_layer3_tb.v）
+   - [x] GELU LUT 模組實作（gelu_lut_act.v）
+   - [x] GELU 激活函數整合
+   - [x] 第三層測試平台（conv2d_layer3_tb.v）
 
 5. **池化層**
    - [x] Max Pooling 單元（2×2）
@@ -271,17 +314,20 @@ $$p_i = \frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)}$$
    - [x] Softmax（argmax 近似）實作
    - [x] 全連接層測試平台（fc_softmax_unit_tb.v）
 
+7. **系統整合** 🚧 **進行中**
+   - [x] 完整 CNN 頂層模組整合（main.v）
+   - [x] 層間資料流連接
+   - [x] 時序同步與控制信號
+   - [x] Flatten 層實作（並行轉串行）
+   - [x] 完整測試平台開發（main_tb.v）
+   - [ ] **測試平台驗證通過** ⚠️（main_tb.v 已寫完但尚未通過測試）
+
 ### 🚧 進行中 / 待完成
 
-1. **第三層卷積（Conv2d Layer 3）**
-   - [ ] 第三層測試平台開發（conv2d_layer3_tb.v）
-   - [ ] GELU LUT 模組實作（gelu_lut_act.v，目前 conv2d_layer3.v 已引用但模組尚未實作）
-   - [ ] 權重檔案準備（conv3_gelu.txt）
-
-3. **系統整合**
-   - [ ] 完整 CNN 頂層模組整合
-   - [ ] 層間資料流連接
-   - [ ] 時序同步與控制信號
+1. **系統整合測試**
+   - [ ] main_tb.v 測試驗證通過
+   - [ ] 完整系統功能驗證
+   - [ ] 時序問題修正
 
 4. **權重檔案**
    - [ ] 準備所有層的量化權重檔案
@@ -307,10 +353,21 @@ CA_final/
 ├── conv2d_layer2.v              # 第二層卷積（8→16, SELU）✅
 ├── conv2d_layer2_tb.v           # 第二層卷積測試平台 ✅
 ├── conv2d_layer3.v              # 第三層卷積（16→32, GELU）✅
-├── conv2d_layer3_tb.v           # 第三層卷積測試平台 🚧
+├── conv2d_layer3_tb.v           # 第三層卷積測試平台 ✅
 ├── conv2d_test.v                # 卷積層測試模組（狀態機版本，已棄用）
 ├── selu_lut_act.v               # SELU 激活函數 LUT 模組 ✅
-├── gelu_lut_act.v               # GELU 激活函數 LUT 模組 🚧（待實作）
+├── gelu_lut_act.v               # GELU 激活函數 LUT 模組 ✅
+├── main.v                       # 完整 CNN 系統頂層模組 ✅
+├── main_tb.v                    # 完整系統測試平台 🚧（已寫完但未通過測試）
+├── import_file/                 # 權重與測試資料目錄
+│   ├── conv1_relu.txt          # 第一層權重
+│   ├── conv2_selu.txt          # 第二層權重
+│   ├── conv3_gelu.txt          # 第三層權重
+│   ├── fc_weights.txt          # 全連接層權重
+│   ├── fc_biases.txt           # 全連接層偏置
+│   ├── selu_lut.txt            # SELU LUT 資料
+│   ├── gelu_lut.txt            # GELU LUT 資料
+│   └── test_image.txt          # 測試影像
 ├── fc_softmax_unit.v            # 全連接層與 Softmax
 ├── fc_softmax_unit_tb.v         # 全連接層測試平台 ✅
 ├── global_avg_pool_unit.v       # 全域平均池化單元
@@ -336,11 +393,16 @@ vvp conv2d_layer1_tb
 
 ### 權重檔案
 
-- `conv1_relu.txt`: 第一層卷積權重（十六進位格式）
-- `conv2_selu.txt`: 第二層卷積權重（十六進位格式，待準備）
-- `selu_lut.hex`: SELU 激活函數查表（256 entries）
-- `weights.txt`: 全連接層權重
-- `biases.txt`: 全連接層偏置
+所有權重檔案位於 `import_file/` 目錄下：
+
+- `conv1_relu.txt`: 第一層卷積權重（十六進位格式）✅
+- `conv2_selu.txt`: 第二層卷積權重（十六進位格式）✅
+- `conv3_gelu.txt`: 第三層卷積權重（十六進位格式）✅
+- `fc_weights.txt`: 全連接層權重 ✅
+- `fc_biases.txt`: 全連接層偏置 ✅
+- `selu_lut.txt`: SELU 激活函數查表（256 entries）✅
+- `gelu_lut.txt`: GELU 激活函數查表（256 entries）✅
+- `test_image.txt`: MNIST 測試影像（28×28）✅
 
 ## 技術細節
 
@@ -378,21 +440,35 @@ vvp conv2d_layer1_tb
   - SELU 激活函數整合完成
   - 完整的測試平台開發完成
 
-- ✅ **第三層卷積架構完成**：完成 `conv2d_layer3.v`
+- ✅ **第三層卷積完成**：完成 `conv2d_layer3.v` 與 `conv2d_layer3_tb.v`
   - 實作 16 輸入通道並行處理
   - 實作 32 輸出通道 MAC 連接
   - 實作多通道加法樹累加邏輯
-  - GELU 激活函數整合（需 gelu_lut_act.v 模組）
+  - GELU 激活函數整合完成
+  - 完整的測試平台開發完成
+
+- ✅ **GELU 激活函數模組**：完成 `gelu_lut_act.v`
+  - 使用 LUT 方式實現 GELU 函數
+  - 支援有符號 8-bit 輸入輸出
 
 - ✅ **SELU 激活函數模組**：完成 `selu_lut_act.v`
   - 使用 LUT 方式實現 SELU 函數
   - 支援有符號 8-bit 輸入輸出
 
+- ✅ **系統整合完成**：完成 `main.v` 與 `main_tb.v`
+  - 整合所有 7 個層（3 個卷積層、1 個最大池化層、1 個全域平均池化層、1 個全連接層）
+  - 層間資料流自動連接
+  - Flatten 層實作（並行轉串行）
+  - 完整測試平台開發完成
+  - ⚠️ **注意**：`main_tb.v` 已寫完但尚未通過驗證測試
+
 - ✅ **測試平台完善**：
   - `conv2d_layer1_tb.v`：多通道驗證、負數權重測試、完整 Golden Model
   - `conv2d_layer2_tb.v`：完整測試平台，支援多通道驗證
+  - `conv2d_layer3_tb.v`：完整測試平台，支援多通道驗證
   - `global_avg_pool_unit_tb.v`：多測試案例，完整驗證機制
   - `max_pool_unit_tb.v`：多測試案例，完整驗證機制
+  - `main_tb.v`：完整系統測試平台（已寫完但未通過測試）
 
 ### 之前版本
 
@@ -406,4 +482,4 @@ vvp conv2d_layer1_tb
 
 ---
 
-**最後更新時間**: 2024/12/XX（待更新日期）
+**最後更新時間**: 2024/12/XX
