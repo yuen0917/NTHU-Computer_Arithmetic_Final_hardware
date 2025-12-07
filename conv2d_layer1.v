@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 // ============================================================
 // 2D Convolution Module with 8 channels with ReLU function
 // ============================================================
@@ -49,6 +50,7 @@ module conv2d_layer1 #(
     wire [7:0] r0, r1, r2;
 
     initial begin
+        // $readmemh("import_file/conv1_relu.txt", weight_data);
         $readmemh("conv1_relu.txt", weight_data);
     end
 
@@ -117,11 +119,12 @@ module conv2d_layer1 #(
             col_cnt <= 0;
             row_cnt <= 0;
         end else if (in_valid) begin
-            // correction: here must use TOTAL_W to judge the line change, because the input stream contains Padding
-            if (col_cnt == TOTAL_W - 1) begin
+            if (col_cnt == IMG_W - 1) begin
                 col_cnt <= 0;
-                // correction: Row must also count to TOTAL_H (including Padding rows)
-                row_cnt <= (row_cnt == TOTAL_H - 1) ? 0 : row_cnt + 1;
+                if (row_cnt == IMG_H - 1)
+                    row_cnt <= 0;
+                else
+                    row_cnt <= row_cnt + 1;
             end else begin
                 col_cnt <= col_cnt + 1;
             end
@@ -131,39 +134,27 @@ module conv2d_layer1 #(
     // ============================================================
     // correction: Valid determination logic
     // ============================================================
-    wire [COL_CNT_W:0] next_col_cnt;
-    assign next_col_cnt = (col_cnt == TOTAL_W - 1) ? 0 : col_cnt + 1;
-
-    wire col_valid_region;
-    wire row_valid_region;
-
-    // 1. use next_col_cnt to ensure that the Valid and the data output of the Line Buffer are synchronized
-    //    so that the Valid will be High when the first piece of data comes in
-    assign col_valid_region = (next_col_cnt >= PADDING) && (next_col_cnt < IMG_W + PADDING);
-
-    // Row keep the original (because the update of Row is slower, and the TB behavior has verified that Row is correct)
-    assign row_valid_region = (row_cnt >= 1) && (row_cnt <= IMG_H);
-
-    wire input_region_valid;
-    assign input_region_valid = row_valid_region && col_valid_region;
-
-    // 3. Shift register latency compensation
-
-    reg [4:0] valid_pipe;
+    reg input_region_valid;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            valid_pipe <= 0;
-        end else if (in_valid) begin
-            // Shift only when in_valid is high, because the entire pipeline is driven by in_valid
-            // Push input_region_valid into the shift register
-            valid_pipe <= {valid_pipe[3:0], input_region_valid};
-        end else begin
-            // If in_valid is deasserted (e.g., waiting), the pipeline should also stop updating the valid status.
-            // Depending on your design, you may want to insert 0 here (if the pipeline is flushed).
-            // Here we assume a stall mechanism:
-            valid_pipe <= {valid_pipe[3:0], 1'b0};
+        if (!rst_n) input_region_valid <= 0;
+        else if (in_valid) begin
+            if (row_cnt >= 1 || (row_cnt == 0 && col_cnt > 0))
+               input_region_valid <= 1;
         end
+
     end
+
+    wire start_output;
+    wire active_row = (row_cnt >= 1);
+    assign start_output = active_row;
+
+    reg [3:0] conv_valid_pipe;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) conv_valid_pipe <= 0;
+        else if (in_valid) conv_valid_pipe <= {conv_valid_pipe[2:0], start_output};
+        else conv_valid_pipe <= {conv_valid_pipe[2:0], 1'b0};
+    end
+
 
     // ============================================================
     // for mac output quantization and saturation
@@ -197,9 +188,9 @@ module conv2d_layer1 #(
                 sat_val[k] = (tmp_mac[k] > 255) ? 255 : tmp_mac[k][7:0];
             end
 
-            out_valid <= valid_pipe[3];
+            out_valid <= conv_valid_pipe[3];
 
-            if (valid_pipe[3]) begin
+            if (conv_valid_pipe[3]) begin
                 out_conv0 <= sat_val[0];
                 out_conv1 <= sat_val[1];
                 out_conv2 <= sat_val[2];

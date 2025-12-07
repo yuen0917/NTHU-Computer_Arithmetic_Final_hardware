@@ -1,12 +1,13 @@
-// ------------------------------------------------------------
-// MAC for 3x3 window
-// ------------------------------------------------------------
+`timescale 1ns/1ps
+// ============================================================
+// 3x3 Window MAC Unit
+// ============================================================
 module mac_3x3(
     input                    clk,
     input                    rst_n,
     input                    in_valid,
     input             [ 7:0] win00, win01, win02,
-    input             [ 7:0] win10, win11, win12, 
+    input             [ 7:0] win10, win11, win12,
     input             [ 7:0] win20, win21, win22,
     input      signed [ 7:0] weight00, weight01, weight02,
     input      signed [ 7:0] weight10, weight11, weight12,
@@ -38,5 +39,5 @@ module mac_3x3(
             out_mac <= mac0 + mac1 + mac2;
         end
     end
-    
+
 endmodule

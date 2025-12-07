@@ -1,6 +1,7 @@
-// ------------------------------------------------------------
-// Line Buffer for 3x3 window
-// ------------------------------------------------------------
+`timescale 1ns/1ps
+// ============================================================
+// Line Buffer
+// ============================================================
 module line_buffer #(
     parameter IMG_W   = 28,
     parameter PADDING =  1
@@ -13,19 +14,14 @@ module line_buffer #(
     output reg [7:0] out_row1,
     output reg [7:0] out_row2
 );
-    localparam TOTAL_W   = IMG_W + 2 * PADDING;  // total width (including padding)
-    localparam CNT_WIDTH = $clog2(TOTAL_W);
-
+    // [修正] 移除 TOTAL_W，只用 IMG_W。我們不需要在 buffer 內做 padding。
+    // Padding 由 window generator 的邊界條件或 Top level 控制 (這裡簡化處理)
 
     reg [7:0] buf1 [0:IMG_W - 1];
     reg [7:0] buf2 [0:IMG_W - 1];
 
-    reg [CNT_WIDTH-1:0] col_cnt;
-
-    // 為了修正延遲，我們計算一個 "Next Column Count" 給 Mask 邏輯使用
-    wire [CNT_WIDTH-1:0] next_col_cnt;
-    assign next_col_cnt = (col_cnt == TOTAL_W - 1) ? 0 : col_cnt + 1;
-
+    // 計數器只需數到 27
+    reg [$clog2(IMG_W)-1:0] col_cnt;
 
     integer i;
     always @(posedge clk or negedge rst_n) begin
@@ -39,33 +35,23 @@ module line_buffer #(
             out_row1 <= 0;
             out_row2 <= 0;
         end else if (in_valid) begin
-            // --------------------------------------------------------
-            // 修正重點：使用 next_col_cnt 進行判斷
-            // 當 col_cnt 為 0 (Padding) 時，next 為 1 (Data Start)。
-            // 此時我們就應該允許寫入與輸出，因為當下的 in_data 就是 Data。
-            // --------------------------------------------------------
+            // 1. 寫入 Buffer (存入當前列位置)
+            buf1[col_cnt] <= in_data;
+            buf2[col_cnt] <= buf1[col_cnt];
 
-            // 寫入 Buffer
-            if (next_col_cnt >= PADDING && next_col_cnt < IMG_W + PADDING) begin
-                buf1[next_col_cnt - PADDING] <= in_data;
-                buf2[next_col_cnt - PADDING] <= buf1[next_col_cnt - PADDING];
-            end
+            // 2. 輸出 Buffer (讀取當前列位置的舊資料)
+            // out_row2 是最新的資料 (直通)
+            // out_row1 是上一行的資料 (從 buf1 讀)
+            // out_row0 是上上行的資料 (從 buf2 讀)
+            out_row2 <= in_data;
+            out_row1 <= buf1[col_cnt];
+            out_row0 <= buf2[col_cnt];
 
-            // 輸出邏輯 (Masking)
-            if (next_col_cnt >= PADDING && next_col_cnt < IMG_W + PADDING) begin
-                out_row2 <= in_data;
-                // 注意：讀取 buffer 仍用 next index，因為我們希望讀取到
-                // 在 "上一個 Row" 同樣位置寫入的資料
-                out_row1 <= buf1[next_col_cnt - PADDING];
-                out_row0 <= buf2[next_col_cnt - PADDING];
-            end else begin
-                out_row2 <= 0;
-                out_row1 <= 0;
-                out_row0 <= 0;
-            end
-
-            col_cnt <= next_col_cnt;
+            // 3. 更新計數器 (0 ~ 27)
+            if (col_cnt == IMG_W - 1)
+                col_cnt <= 0;
+            else
+                col_cnt <= col_cnt + 1;
         end
     end
-
 endmodule

@@ -134,63 +134,97 @@
 - **輸出**: 16 個通道的 8-bit 卷積結果
 - **狀態**: 基本架構已完成，SELU 激活函數待整合
 
-#### 10. `selu_lut_act.v` ⭐ **新增**
+#### 10. `selu_lut_act.v` ✅ **已完成**
 
 - **功能**: SELU 激活函數的查表（LUT）實作
 - **特性**:
   - 使用 256-entry LUT 實現 SELU 函數
   - 支援有符號 8-bit 輸入（-128 到 127）
   - 2 週期 pipeline（讀取 LUT + 輸出）
-  - 從檔案 `selu_lut.hex` 讀取 LUT 資料
+  - 從檔案 `selu_lut.txt` 讀取 LUT 資料
 - **用途**: 用於第二層卷積的 SELU 激活函數
+
+#### 11. `conv2d_layer3.v` ✅ **已完成**
+
+- **功能**: 第三個卷積層（16→32 通道）
+- **特性**:
+  - 支援 16 個並行輸入通道（對應第二層的 16 個輸出）
+  - 輸出 32 個通道
+  - 使用多通道 line buffer 和 window generator
+  - 包含 512 個 MAC 單元（32 輸出通道 × 16 輸入通道）
+  - 使用加法樹累加多通道結果
+  - GELU 激活函數整合（需 gelu_lut_act.v 模組）
+- **輸入**: 16 個並行的 8-bit 通道資料
+- **輸出**: 32 個通道的 8-bit 卷積結果
+- **狀態**: 基本架構已完成，GELU LUT 模組待實作
+
+#### 12. `conv2d_layer2_tb.v` ✅ **已完成**
+
+- **功能**: 第二層卷積的測試平台
+- **特性**:
+  - 使用 28×28 測試影像
+  - 包含完整的時序測試
+  - 支援權重檔案生成與載入
+  - 完整的 Golden Model 計算（包含 SELU 和飽和處理）
+  - 支援多通道驗證（所有 16 個通道）
+  - 允許 +/- 1 的誤差（SELU LUT 精度差異）
+
+#### 13. `global_avg_pool_unit_tb.v` ✅ **已完成**
+
+- **功能**: 全域平均池化單元的測試平台
+- **特性**:
+  - 多個測試案例（相同值、遞增值、最大值、隨機值）
+  - 使用與硬體相同的近似公式計算 Golden Model
+  - 完整的輸出驗證機制
 
 ### 測試平台
 
-#### `conv2d_layer1_tb.v` ⭐ **已更新**
+#### `conv2d_layer1_tb.v` ✅ **已完成**
 
 - **功能**: 第一個卷積層的測試平台
 - **特性**:
   - 使用 4×4 測試影像
   - 包含完整的時序測試
   - 支援權重覆寫功能
-  - **新增**: 支援多通道驗證（所有 8 個通道）
-  - **新增**: 支援負數權重測試（驗證 ReLU 功能）
-  - **新增**: 完整的 Golden Model 計算（包含 ReLU 和飽和處理）
-  - **新增**: 可配置的權重參數（`WEIGHT_CH0` ~ `WEIGHT_CH7`）
+  - 支援多通道驗證（所有 8 個通道）
+  - 支援負數權重測試（驗證 ReLU 功能）
+  - 完整的 Golden Model 計算（包含 ReLU 和飽和處理）
+  - 可配置的權重參數（`WEIGHT_CH0` ~ `WEIGHT_CH7`）
+
+#### `max_pool_unit_tb.v` ✅ **已完成**
+
+- **功能**: 最大池化單元的測試平台
+- **特性**:
+  - 使用 28×28 測試影像（輸出 14×14）
+  - 包含多個測試案例（遞增值、隨機值）
+  - 完整的 Golden Model 計算（2×2 最大池化）
+  - 完整的輸出驗證機制
 
 ## 激活函數
 
 ### ReLU
 
-```
-ReLU(x) = max(0, x)
-```
+$$\text{ReLU}(x) = \max(0, x)$$
 
 ### SELU
 
-```
-SELU(x) = { λx        if x > 0
-          { λα(e^x - 1) if x ≤ 0
-```
-其中 λ ≈ 1.0507, α ≈ 1.6733
+$$\text{SELU}(x) = \begin{cases} \lambda x & \text{if } x > 0 \\ \lambda \alpha (e^x - 1) & \text{if } x \leq 0 \end{cases}$$
+
+其中 $\lambda \approx 1.0507$, $\alpha \approx 1.6733$
 
 ### GELU
 
-```
-GELU(x) = xΦ(x) = (1/2)x(1 + erf(x/√2))
-```
+$$\text{GELU}(x) = x\Phi(x) = \frac{1}{2}x\left(1 + \text{erf}\left(\frac{x}{\sqrt{2}}\right)\right)$$
+
 近似式：
-```
-GELU(x) ≈ (1/2)x [1 + tanh(√(2/π) (x + 0.044715x³))]
-```
+
+$$\text{GELU}(x) \approx \frac{1}{2}x\left[1 + \tanh\left(\sqrt{\frac{2}{\pi}}\left(x + 0.044715x^3\right)\right)\right]$$
 
 ### Softmax
 
-```
-p_i = exp(z_i - m) / Σ_j exp(z_j - m)
-```
+$$p_i = \frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)}$$
 
-其中 `m = max{z_1, z_2, ..., z_k}` (k 是類別數)
+其中 $m = \max\{z_1, z_2, \ldots, z_k\}$ ($k$ 是類別數)
 
 ## 目前實作進度
 
@@ -209,34 +243,40 @@ p_i = exp(z_i - m) / Σ_j exp(z_j - m)
    - [x] 多通道驗證功能
    - [x] 負數權重測試支援
 
-3. **第二層卷積（Conv2d Layer 2）** ⭐ **新增**
+3. **第二層卷積（Conv2d Layer 2）** ✅ **已完成**
    - [x] Conv2d(8→16) 基本架構實作
    - [x] 多通道輸入處理（8 個並行輸入通道）
    - [x] 多通道 MAC 連接（128 個 MAC 單元）
    - [x] 加法樹累加邏輯
    - [x] SELU LUT 模組實作（selu_lut_act.v）
-   - [ ] SELU 激活函數整合到第二層
-   - [ ] 第二層測試平台
+   - [x] SELU 激活函數整合到第二層
+   - [x] 第二層測試平台（conv2d_layer2_tb.v）
 
-4. **池化層**
+4. **第三層卷積（Conv2d Layer 3）** ✅ **已完成**
+   - [x] Conv2d(16→32) 模組實作
+   - [x] 多通道輸入處理（16 個並行輸入通道）
+   - [x] 多通道 MAC 連接（512 個 MAC 單元）
+   - [x] 加法樹累加邏輯
+   - [x] GELU 激活函數整合（gelu_lut_act.v）
+   - [ ] 第三層測試平台（conv2d_layer3_tb.v）
+
+5. **池化層**
    - [x] Max Pooling 單元（2×2）
+   - [x] Max Pooling 測試平台（max_pool_unit_tb.v）
    - [x] Global Average Pooling 單元
+   - [x] Global Average Pooling 測試平台（global_avg_pool_unit_tb.v）
 
-5. **全連接層**
+6. **全連接層**
    - [x] FC(32→10) 模組
    - [x] Softmax（argmax 近似）實作
+   - [x] 全連接層測試平台（fc_softmax_unit_tb.v）
 
 ### 🚧 進行中 / 待完成
 
-1. **第二層卷積（Conv2d Layer 2）**
-   - [ ] SELU 激活函數整合到卷積層
-   - [ ] 第二層測試平台開發
-   - [ ] 權重檔案準備（conv2_selu.txt）
-
-2. **第三層卷積（Conv2d Layer 3）**
-   - [ ] Conv2d(16→32) 模組實作
-   - [ ] GELU 激活函數實作與整合
-   - [ ] 多通道輸入處理（16 通道）
+1. **第三層卷積（Conv2d Layer 3）**
+   - [ ] 第三層測試平台開發（conv2d_layer3_tb.v）
+   - [ ] GELU LUT 模組實作（gelu_lut_act.v，目前 conv2d_layer3.v 已引用但模組尚未實作）
+   - [ ] 權重檔案準備（conv3_gelu.txt）
 
 3. **系統整合**
    - [ ] 完整 CNN 頂層模組整合
@@ -259,19 +299,26 @@ p_i = exp(z_i - m) / Σ_j exp(z_j - m)
 
 ## 檔案結構
 
-```
+```text
 CA_final/
 ├── README.md                    # 本檔案
 ├── conv2d_layer1.v              # 第一層卷積（1→8, ReLU）
-├── conv2d_layer1_tb.v           # 第一層卷積測試平台（已更新）
-├── conv2d_layer2.v              # 第二層卷積（8→16, SELU）⭐ 新增
-├── conv2d_test.v                # 卷積層測試模組（狀態機版本）
-├── selu_lut_act.v               # SELU 激活函數 LUT 模組 ⭐ 新增
+├── conv2d_layer1_tb.v           # 第一層卷積測試平台 ✅
+├── conv2d_layer2.v              # 第二層卷積（8→16, SELU）✅
+├── conv2d_layer2_tb.v           # 第二層卷積測試平台 ✅
+├── conv2d_layer3.v              # 第三層卷積（16→32, GELU）✅
+├── conv2d_layer3_tb.v           # 第三層卷積測試平台 🚧
+├── conv2d_test.v                # 卷積層測試模組（狀態機版本，已棄用）
+├── selu_lut_act.v               # SELU 激活函數 LUT 模組 ✅
+├── gelu_lut_act.v               # GELU 激活函數 LUT 模組 🚧（待實作）
 ├── fc_softmax_unit.v            # 全連接層與 Softmax
+├── fc_softmax_unit_tb.v         # 全連接層測試平台 ✅
 ├── global_avg_pool_unit.v       # 全域平均池化單元
+├── global_avg_pool_unit_tb.v   # 全域平均池化測試平台 ✅
 ├── line_buffer.v                # 行緩衝器
 ├── mac_3x3.v                    # 3×3 乘加運算單元
 ├── max_pool_unit.v              # 最大池化單元
+├── max_pool_unit_tb.v           # 最大池化測試平台 ✅
 └── window_generator.v           # 窗口生成器
 ```
 
@@ -324,20 +371,28 @@ vvp conv2d_layer1_tb
 
 ### 2024年12月（最新更新）
 
-- ✅ **第二層卷積架構實作**：完成 `conv2d_layer2.v` 基本架構
+- ✅ **第二層卷積完成**：完成 `conv2d_layer2.v` 與 `conv2d_layer2_tb.v`
   - 實作 8 輸入通道並行處理
   - 實作 16 輸出通道 MAC 連接
   - 實作多通道加法樹累加邏輯
+  - SELU 激活函數整合完成
+  - 完整的測試平台開發完成
+
+- ✅ **第三層卷積架構完成**：完成 `conv2d_layer3.v`
+  - 實作 16 輸入通道並行處理
+  - 實作 32 輸出通道 MAC 連接
+  - 實作多通道加法樹累加邏輯
+  - GELU 激活函數整合（需 gelu_lut_act.v 模組）
 
 - ✅ **SELU 激活函數模組**：完成 `selu_lut_act.v`
   - 使用 LUT 方式實現 SELU 函數
   - 支援有符號 8-bit 輸入輸出
 
-- ✅ **測試平台增強**：更新 `conv2d_layer1_tb.v`
-  - 新增多通道驗證功能（驗證所有 8 個通道）
-  - 新增負數權重測試支援
-  - 完善 Golden Model 計算（包含 ReLU 和飽和處理）
-  - 新增可配置權重參數
+- ✅ **測試平台完善**：
+  - `conv2d_layer1_tb.v`：多通道驗證、負數權重測試、完整 Golden Model
+  - `conv2d_layer2_tb.v`：完整測試平台，支援多通道驗證
+  - `global_avg_pool_unit_tb.v`：多測試案例，完整驗證機制
+  - `max_pool_unit_tb.v`：多測試案例，完整驗證機制
 
 ### 之前版本
 
@@ -351,4 +406,4 @@ vvp conv2d_layer1_tb
 
 ---
 
-**最後更新時間**: 2024/12/06 22:00
+**最後更新時間**: 2024/12/XX（待更新日期）

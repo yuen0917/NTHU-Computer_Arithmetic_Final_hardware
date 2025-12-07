@@ -1,3 +1,8 @@
+`timescale 1ns/1ps
+
+// ============================================================
+// SELU LUT Activation Function
+// ============================================================
 module selu_lut_act (
     input  wire              clk,
     input  wire              rst_n,
@@ -11,6 +16,7 @@ module selu_lut_act (
     reg signed [7:0] selu_lut [0:255];
 
     initial begin
+        // $readmemh("import_file/selu_lut.txt", selu_lut);
         $readmemh("selu_lut.txt", selu_lut);
     end
 

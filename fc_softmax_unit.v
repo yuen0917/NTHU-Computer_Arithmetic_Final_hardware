@@ -1,3 +1,7 @@
+`timescale 1ns/1ps
+// ============================================================
+// FC & Softmax Unit
+// ============================================================
 module fc_softmax_unit #(
   parameter IN_DIM  = 32,
   parameter OUT_DIM = 10
@@ -25,8 +29,10 @@ module fc_softmax_unit #(
   reg signed [31:0] biases  [0:B_SIZE - 1];
 
   initial begin
-    $readmemh("weights.txt", weights);
-    $readmemh("biases.txt", biases);
+    // $readmemh("import_file/fc_weights.txt", weights);
+    $readmemh("fc_weights.txt", weights);
+    // $readmemh("import_file/fc_biases.txt", biases);
+    $readmemh("fc_biases.txt", biases);
   end
 
 
@@ -71,10 +77,15 @@ module fc_softmax_unit #(
     end else begin
       case(state)
         S_IDLE: begin
-          acc_cnt   <= 0;
-          out_data  <= 0;
-          out_valid <= 0;
-          out_cnt   <= 0;
+          acc_cnt     <= 0;
+          out_data    <= 0;
+          out_valid   <= 0;
+          out_cnt     <= 0;
+          class_out   <= 0;
+          class_valid <= 0;
+          max_val     <= 0;
+
+          for(i = 0; i < OUT_DIM; i = i + 1) acc[i] <= 0;
 
           // for bias and first in_data
           if (in_valid) begin

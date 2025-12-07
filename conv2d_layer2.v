@@ -1,7 +1,6 @@
+`timescale 1ns/1ps
 // ============================================================
-// 2D Convolution Module with 16 channels (8 input channels)
-// Input: 8 parallel channels from layer1 output
-// Output: 16 channels with SELU activation function
+// 2D Convolution Module with 16 channels (8 input channels) with SELU function
 // ============================================================
 module conv2d_layer2 #(
   parameter PADDING     = 1,
@@ -54,10 +53,8 @@ module conv2d_layer2 #(
 
     localparam KERNEL_SIZE = 3 * 3;
     localparam WEIGHT_SIZE = CH_IN * CH_OUT * KERNEL_SIZE;
-    localparam TOTAL_W     = IMG_W + 2 * PADDING;
-    localparam TOTAL_H     = IMG_H + 2 * PADDING;
-    localparam COL_CNT_W   = (TOTAL_W <= 1) ? 1 : $clog2(TOTAL_W);
-    localparam ROW_CNT_W   = (TOTAL_H <= 1) ? 1 : $clog2(TOTAL_H);
+    localparam COL_CNT_W   = (IMG_W <= 1) ? 1 : $clog2(IMG_W);
+    localparam ROW_CNT_W   = (IMG_H <= 1) ? 1 : $clog2(IMG_H);
 
     reg [COL_CNT_W:0] col_cnt;
     reg [ROW_CNT_W:0] row_cnt;
@@ -80,6 +77,7 @@ module conv2d_layer2 #(
     wire [7:0] r2 [0:CH_IN-1];
 
     initial begin
+      // $readmemh("import_file/conv2_selu.txt", weight_data);
       $readmemh("conv2_selu.txt", weight_data);
     end
     // ============================================================
@@ -200,11 +198,9 @@ module conv2d_layer2 #(
           col_cnt <= 0;
           row_cnt <= 0;
       end else if (in_valid) begin
-          // correction: here must use TOTAL_W to judge the line change, because the input stream contains Padding
-          if (col_cnt == TOTAL_W - 1) begin
+          if (col_cnt == IMG_W - 1) begin
               col_cnt <= 0;
-              // correction: Row must also count to TOTAL_H (including Padding rows)
-              row_cnt <= (row_cnt == TOTAL_H - 1) ? 0 : row_cnt + 1;
+              row_cnt <= (row_cnt == IMG_H - 1) ? 0 : row_cnt + 1;
           end else begin
               col_cnt <= col_cnt + 1;
           end
@@ -212,43 +208,28 @@ module conv2d_layer2 #(
     end
 
     // ============================================================
-    // Window valid signal (similar to layer1)
+    // Window valid signal
     // ============================================================
-    wire [COL_CNT_W:0] next_col_cnt;
-    assign next_col_cnt = (col_cnt == TOTAL_W - 1) ? 0 : col_cnt + 1;
 
-    wire col_valid_region;
-    wire row_valid_region;
-    wire input_region_valid;
-
-    // 1. use next_col_cnt to ensure that the Valid and the data output of the Line Buffer are synchronized
-    //    so that the Valid will be High when the first piece of data comes in
-    assign col_valid_region = (next_col_cnt >= PADDING) && (next_col_cnt < IMG_W + PADDING);
-
-    // Row keep the original (because the update of Row is slower, and the TB behavior has verified that Row is correct)
-    assign row_valid_region = (row_cnt >= 1) && (row_cnt <= IMG_H);
-
-    assign input_region_valid = row_valid_region && col_valid_region;
-
-    // ============================================================
-    // Pipeline Compensation (Stage 1: Conv Latency)
-    // ============================================================
-    // The latency of the convolution: LB(1) + Win(1) + MAC(1) + Adder(0) = 3 cycles (Data Ready)
-    // We need to send conv_valid to the SELU module at the correct time
-    // Note: Layer 1 uses [4] because it includes Output Reg.
-    // Here we send the data to SELU before it enters the Output Reg.
-    // Data Path: Input -> LB(T1) -> Win(T2) -> MAC/Adder(T3) -> Quantize -> SELU
-    // So we need to delay 3 cycles for the input valid of SELU
-
-    reg [3:0] conv_valid_pipe; // use 4 bit for safety
+    reg input_region_valid;
     always @(posedge clk or negedge rst_n) begin
-      if (!rst_n) conv_valid_pipe <= 0;
-      else if (in_valid) conv_valid_pipe <= {conv_valid_pipe[2:0], input_region_valid};
-      else conv_valid_pipe <= {conv_valid_pipe[2:0], 1'b0};
+        if (!rst_n) input_region_valid <= 0;
+        else if (in_valid) begin
+            if (row_cnt >= 1 || (row_cnt == 0 && col_cnt > 0))
+               input_region_valid <= 1;
+        end
     end
 
-    // This is the Valid signal to send to SELU
-    wire valid_to_selu = conv_valid_pipe[2];
+    wire start_output;
+    assign start_output = (row_cnt >= 1);
+
+    reg [2:0] conv_valid_pipe;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) conv_valid_pipe <= 0;
+        else if (in_valid) conv_valid_pipe <= {conv_valid_pipe[1:0], start_output};
+        else conv_valid_pipe <= {conv_valid_pipe[1:0], 1'b0};
+    end
+
 
     // ============================================================
     // Quantization & SELU Integration
@@ -272,7 +253,7 @@ module conv2d_layer2 #(
         selu_lut_act u_selu (
             .clk(clk),
             .rst_n(rst_n),
-            .in_valid(valid_to_selu),
+            .in_valid(conv_valid_pipe[2]),
             .in_data(selu_in[out_ch]),
             .out_valid(selu_out_valid[out_ch]),
             .out_data(selu_out[out_ch])

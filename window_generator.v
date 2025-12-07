@@ -1,15 +1,16 @@
-// ------------------------------------------------------------
-// Window Generator for 3x3 window
-// ------------------------------------------------------------
-module window_generator( // window generator for 3x3 window
+`timescale 1ns/1ps
+// ============================================================
+// 3x3 Window Generator
+// ============================================================
+module window_generator(
     input clk,
     input rst_n,
     input [7:0] r0,
     input [7:0] r1,
     input [7:0] r2,
     input in_valid,
-    output reg [7:0] win00, win01, win02, 
-    output reg [7:0] win10, win11, win12, 
+    output reg [7:0] win00, win01, win02,
+    output reg [7:0] win10, win11, win12,
     output reg [7:0] win20, win21, win22
 );
     reg [7:0] shift_reg0 [0:1];
