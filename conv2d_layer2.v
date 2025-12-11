@@ -145,7 +145,7 @@ module conv2d_layer2 #(
       for(out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin
         // For each input channel
         for(in_ch = 0; in_ch < CH_IN; in_ch = in_ch + 1) begin
-          mac_3x3 u_mac_3x3 (
+          mac_3x3 #(.INPUT_IS_SIGNED(0)) u_mac_3x3 (
             .clk(clk),
             .rst_n(rst_n),
             .in_valid(in_valid),

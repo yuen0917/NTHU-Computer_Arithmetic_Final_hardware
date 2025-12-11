@@ -90,7 +90,7 @@ module conv2d_layer1 #(
     genvar i;
     generate
         for(i = 0; i < CH_OUT; i = i + 1) begin
-            mac_3x3 u_mac_3x3 (
+            mac_3x3 #(.INPUT_IS_SIGNED(0)) u_mac_3x3 (
                 .clk(clk),
                 .rst_n(rst_n),
                 .in_valid(in_valid),
@@ -157,39 +157,40 @@ module conv2d_layer1 #(
 
 
     // ============================================================
-    // for mac output quantization and saturation
+    // Quantization, ReLU, and Saturation Logic
     // ============================================================
     wire signed [31:0] tmp_mac [0:CH_OUT - 1];
-    reg         [ 7:0] sat_val [0:CH_OUT - 1];
+    wire        [ 7:0] sat_val [0:CH_OUT - 1]; // 改成 wire
 
     generate
-        for (i = 0; i < CH_OUT; i = i + 1) begin
-            assign tmp_mac[i] = (out_mac[i] > 0) ? out_mac[i] >>> QUANT_SHIFT: 0;
+        for (i = 0; i < CH_OUT; i = i + 1) begin : GEN_SAT
+            // 1. Quantization & ReLU (Negative handling)
+            assign tmp_mac[i] = (out_mac[i] > 0) ? (out_mac[i] >>> QUANT_SHIFT) : 32'd0;
+
+            // 2. Saturation (Overflow handling for uint8)
+            assign sat_val[i] = (tmp_mac[i] > 127) ? 8'd127 : tmp_mac[i][7:0];
         end
     endgenerate
 
     // ============================================================
-    // Output Assignment
+    // Output Assignment (Sequential Logic)
     // ============================================================
-    integer k;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            out_valid     <= 1'b0;
-            out_conv0     <= 0;
-            out_conv1     <= 0;
-            out_conv2     <= 0;
-            out_conv3     <= 0;
-            out_conv4     <= 0;
-            out_conv5     <= 0;
-            out_conv6     <= 0;
-            out_conv7     <= 0;
-        end else if (in_valid) begin // include relu function
-            for (k = 0; k < CH_OUT; k = k + 1) begin // relu
-                sat_val[k] = (tmp_mac[k] > 255) ? 255 : tmp_mac[k][7:0];
-            end
-
+            out_valid <= 1'b0;
+            out_conv0 <= 0;
+            out_conv1 <= 0;
+            out_conv2 <= 0;
+            out_conv3 <= 0;
+            out_conv4 <= 0;
+            out_conv5 <= 0;
+            out_conv6 <= 0;
+            out_conv7 <= 0;
+        end else if (in_valid) begin
+            // Pipeline delay matching (使用之前測試成功的 conv_valid_pipe)
             out_valid <= conv_valid_pipe[3];
 
+            // 如果 Valid，將算好的 sat_val 存入 Output Register
             if (conv_valid_pipe[3]) begin
                 out_conv0 <= sat_val[0];
                 out_conv1 <= sat_val[1];

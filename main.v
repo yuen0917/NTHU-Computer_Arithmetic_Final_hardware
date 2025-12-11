@@ -16,7 +16,7 @@ module main (
     output               fc_out_valid // Score output valid (optional)
 );
     localparam PADDING = 1;
-    localparam QUANT_SHIFT = 8;
+    localparam QUANT_SHIFT = 6;
     // =========================================================================
     // Layer 1: Conv2d (1 -> 8), 28x28, ReLU
     // =========================================================================

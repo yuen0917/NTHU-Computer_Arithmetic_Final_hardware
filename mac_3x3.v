@@ -2,7 +2,9 @@
 // ============================================================
 // 3x3 Window MAC Unit
 // ============================================================
-module mac_3x3(
+module mac_3x3 #(
+    parameter INPUT_IS_SIGNED = 0
+)(
     input                    clk,
     input                    rst_n,
     input                    in_valid,
@@ -18,15 +20,25 @@ module mac_3x3(
     wire signed [31:0] mac00, mac01, mac02, mac10, mac11, mac12, mac20, mac21, mac22;
     wire signed [31:0] mac0, mac1, mac2;
 
-    assign mac00 = $signed({1'b0, win00}) * $signed(weight00);
-    assign mac01 = $signed({1'b0, win01}) * $signed(weight01);
-    assign mac02 = $signed({1'b0, win02}) * $signed(weight02);
-    assign mac10 = $signed({1'b0, win10}) * $signed(weight10);
-    assign mac11 = $signed({1'b0, win11}) * $signed(weight11);
-    assign mac12 = $signed({1'b0, win12}) * $signed(weight12);
-    assign mac20 = $signed({1'b0, win20}) * $signed(weight20);
-    assign mac21 = $signed({1'b0, win21}) * $signed(weight21);
-    assign mac22 = $signed({1'b0, win22}) * $signed(weight22);
+    function signed [16:0] to_signed_input;
+        input [7:0] val;
+        begin
+            if (INPUT_IS_SIGNED)
+                to_signed_input = $signed(val);      // -2 (254) -> -2
+            else
+                to_signed_input = $signed({1'b0, val}); // 254 -> +254
+        end
+    endfunction
+
+    assign mac00 = to_signed_input(win00) * $signed(weight00);
+    assign mac01 = to_signed_input(win01) * $signed(weight01);
+    assign mac02 = to_signed_input(win02) * $signed(weight02);
+    assign mac10 = to_signed_input(win10) * $signed(weight10);
+    assign mac11 = to_signed_input(win11) * $signed(weight11);
+    assign mac12 = to_signed_input(win12) * $signed(weight12);
+    assign mac20 = to_signed_input(win20) * $signed(weight20);
+    assign mac21 = to_signed_input(win21) * $signed(weight21);
+    assign mac22 = to_signed_input(win22) * $signed(weight22);
 
     assign mac0 = mac00 + mac01 + mac02;
     assign mac1 = mac10 + mac11 + mac12;

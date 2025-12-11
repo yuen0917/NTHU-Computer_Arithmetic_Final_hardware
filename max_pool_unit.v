@@ -72,14 +72,14 @@ module max_pool_unit #(
         if (col_idx[0] == 0) begin
           tmp_in_data      <= in_data;
         end else begin
-          row_buf[buf_cnt] <= (tmp_in_data > in_data) ? tmp_in_data : in_data;
+          row_buf[buf_cnt] <= ($signed(tmp_in_data) > $signed(in_data)) ? tmp_in_data : in_data;
         end
       end else begin // row1
         if (col_idx[0] == 0) begin
-          row_buf[buf_cnt] <= (row_buf[buf_cnt] > in_data) ? row_buf[buf_cnt] : in_data;
+          row_buf[buf_cnt] <= ($signed(row_buf[buf_cnt]) > $signed(in_data)) ? row_buf[buf_cnt] : in_data;
           out_valid        <= 0;
         end else begin
-          out_data         <= (row_buf[buf_cnt] > in_data) ? row_buf[buf_cnt] : in_data;
+          out_data         <= ($signed(row_buf[buf_cnt]) > $signed(in_data)) ? row_buf[buf_cnt] : in_data;
           out_valid        <= 1;
         end
       end

@@ -93,7 +93,7 @@ module fc_softmax_unit #(
           // for bias and first in_data
           if (in_valid) begin
             for (i = 0; i < OUT_DIM; i = i + 1) begin
-              acc[i] <= biases[i] + ($signed({1'b0, in_data}) * weights[i*32 + 0]);
+              acc[i] <= biases[i] + ($signed({in_data}) * weights[i*32 + 0]);
             end
             acc_cnt <= 1;
           end
@@ -101,7 +101,7 @@ module fc_softmax_unit #(
         S_ACC: begin
           if (in_valid) begin
             for (i = 0; i < OUT_DIM; i = i + 1) begin
-              acc[i] <= acc[i] + ($signed({1'b0, in_data}) * weights[i*32 + acc_cnt]);
+              acc[i] <= acc[i] + ($signed({in_data}) * weights[i*32 + acc_cnt]);
             end
 
             if (acc_cnt == IN_DIM - 1) begin

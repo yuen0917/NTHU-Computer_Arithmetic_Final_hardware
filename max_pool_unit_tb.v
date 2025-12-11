@@ -67,8 +67,8 @@ module max_pool_unit_tb;
     //    Simulate the software behavior of 2x2 Max Pooling
     // ============================================================
     task calculate_golden;
-        reg [7:0] p0, p1, p2, p3;
-        reg [7:0] max1, max2, final_max;
+        reg signed [7:0] p0, p1, p2, p3;
+        reg signed [7:0] max1, max2, final_max;
         integer idx_in_base;
         integer idx_out;
         begin
@@ -89,9 +89,9 @@ module max_pool_unit_tb;
                     p3 = input_img[idx_in_base + IMG_W + 1]; // Bottom-Right
 
                     // Find the maximum value
-                    max1 = (p0 > p1) ? p0 : p1;
-                    max2 = (p2 > p3) ? p2 : p3;
-                    final_max = (max1 > max2) ? max1 : max2;
+                    max1 = ($signed(p0) > $signed(p1)) ? p0 : p1;
+                    max2 = ($signed(p2) > $signed(p3)) ? p2 : p3;
+                    final_max = ($signed(max1) > $signed(max2)) ? max1 : max2;
 
                     // Store the expected result array
                     idx_out = r * OUT_W + c;

@@ -139,7 +139,7 @@ module conv2d_layer3 #(
     generate
         for(out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin : MAC_OUT_LOOP
             for(in_ch = 0; in_ch < CH_IN; in_ch = in_ch + 1) begin : MAC_IN_LOOP
-                mac_3x3 u_mac_3x3 (
+                mac_3x3 #(.INPUT_IS_SIGNED(1)) u_mac_3x3 (
                     .clk(clk),
                     .rst_n(rst_n),
                     .in_valid(in_valid),
