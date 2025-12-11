@@ -13,6 +13,7 @@ module fc_softmax_unit #(
   output reg signed [31:0] out_data,
   output reg               out_valid,
   output reg        [ 3:0] class_out,
+  output reg signed [31:0] class_value,
   output reg               class_valid
 );
   localparam W_SIZE = IN_DIM * OUT_DIM;
@@ -72,6 +73,7 @@ module fc_softmax_unit #(
       out_cnt     <= 0;
       class_out   <= 0;
       class_valid <= 0;
+      class_value <= 0;
       max_val     <= 0;
       for(i = 0; i < OUT_DIM; i = i + 1) acc[i] <= 0;
     end else begin
@@ -83,6 +85,7 @@ module fc_softmax_unit #(
           out_cnt     <= 0;
           class_out   <= 0;
           class_valid <= 0;
+          class_value <= 0;
           max_val     <= 0;
 
           for(i = 0; i < OUT_DIM; i = i + 1) acc[i] <= 0;
@@ -121,14 +124,17 @@ module fc_softmax_unit #(
             if (acc[out_cnt] > max_val) begin
               max_val   <= acc[out_cnt];
               class_out <= out_cnt;
+
             end
           end
 
           if (out_cnt == OUT_DIM - 1) begin
             out_cnt     <= 0;
             class_valid <= 1;
+            class_value <= max_val;
           end else begin
             out_cnt     <= out_cnt + 1;
+            class_value <= max_val;
           end
         end
         default: begin
@@ -138,6 +144,7 @@ module fc_softmax_unit #(
           out_cnt     <= 0;
           class_out   <= 0;
           class_valid <= 0;
+          class_value <= 0;
           max_val     <= 0;
           for(i = 0; i < OUT_DIM; i = i + 1) acc[i] <= 0;
         end

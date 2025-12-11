@@ -26,9 +26,10 @@ module gelu_lut_act (
             out_data  <= 8'd0;
         end else if (in_valid) begin
             out_valid <= 1'b1;
-            // Treat the input data as an address to look up the table
-            // in_data is -128 ~ 127, directly as an index corresponding to Verilog's 0~255 (2's complement)
-            out_data  <= gelu_table[in_data];
+            // Force to Unsigned, avoid negative index causing return X
+            // -1 (8'hFF) will read index 255
+            // -128 (8'h80) will read index 128
+            out_data  <= gelu_table[$unsigned(in_data)];
         end else begin
             out_valid <= 1'b0;
         end

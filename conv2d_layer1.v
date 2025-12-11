@@ -208,14 +208,14 @@ module conv2d_layer1 #(
     // ============================================================
     // DEBUG BLOCK: Print Window Content
     // ============================================================
-    always @(posedge clk) begin
-        // when the control signal thinks that the current window is valid, print the content
-        if (input_region_valid) begin
-            $display("[RTL DEBUG] Time=%0t | Cnt=(c:%0d, r:%0d)", $time, col_cnt, row_cnt);
-            $display("    Window Row 0: %d %d %d", win00, win01, win02);
-            $display("    Window Row 1: %d %d %d", win10, win11, win12);
-            $display("    Window Row 2: %d %d %d", win20, win21, win22);
-            $display("    -------------------------");
-        end
-    end
+    // always @(posedge clk) begin
+    //     // when the control signal thinks that the current window is valid, print the content
+    //     if (input_region_valid) begin
+    //         $display("[RTL DEBUG] Time=%0t | Cnt=(c:%0d, r:%0d)", $time, col_cnt, row_cnt);
+    //         $display("    Window Row 0: %d %d %d", win00, win01, win02);
+    //         $display("    Window Row 1: %d %d %d", win10, win11, win12);
+    //         $display("    Window Row 2: %d %d %d", win20, win21, win22);
+    //         $display("    -------------------------");
+    //     end
+    // end
 endmodule

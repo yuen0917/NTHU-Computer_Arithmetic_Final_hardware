@@ -11,10 +11,12 @@ module main (
     // Final output
     output        [ 3:0] class_out,   // Classification result (0~9)
     output               class_valid, // Classification result valid
+    output signed [31:0] class_value, // Value of the classified class (optional)
     output signed [31:0] final_score, // Score of the classified class (optional)
     output               fc_out_valid // Score output valid (optional)
 );
-
+    localparam PADDING = 1;
+    localparam QUANT_SHIFT = 8;
     // =========================================================================
     // Layer 1: Conv2d (1 -> 8), 28x28, ReLU
     // =========================================================================
@@ -23,7 +25,7 @@ module main (
     wire [7:0] l1_out4, l1_out5, l1_out6, l1_out7;
 
     conv2d_layer1 #(
-        .PADDING(1), .IMG_W(28), .IMG_H(28), .CH_IN(1), .CH_OUT(8), .QUANT_SHIFT(10)
+        .PADDING(PADDING), .IMG_W(28), .IMG_H(28), .CH_IN(1), .CH_OUT(8), .QUANT_SHIFT(QUANT_SHIFT)
     ) u_layer1 (
         .clk(clk), .rst_n(rst_n), .in_valid(in_valid), .in_data(in_data),
         .out_valid(l1_valid),
@@ -41,7 +43,7 @@ module main (
     wire [7:0] l2_out12, l2_out13, l2_out14, l2_out15;
 
     conv2d_layer2 #(
-        .PADDING(1), .IMG_W(28), .IMG_H(28), .CH_IN(8), .CH_OUT(16), .QUANT_SHIFT(10)
+        .PADDING(PADDING), .IMG_W(28), .IMG_H(28), .CH_IN(8), .CH_OUT(16), .QUANT_SHIFT(QUANT_SHIFT)
     ) u_layer2 (
         .clk(clk), .rst_n(rst_n), .in_valid(l1_valid),
         .in_data0(l1_out0), .in_data1(l1_out1), .in_data2(l1_out2), .in_data3(l1_out3),
@@ -95,7 +97,7 @@ module main (
     wire [7:0] l4_out_w [0:31];
 
     conv2d_layer3 #(
-        .PADDING(1), .IMG_W(14), .IMG_H(14), .CH_IN(16), .CH_OUT(32), .QUANT_SHIFT(10)
+        .PADDING(PADDING), .IMG_W(14), .IMG_H(14), .CH_IN(16), .CH_OUT(32), .QUANT_SHIFT(QUANT_SHIFT)
     ) u_layer4 (
         .clk(clk), .rst_n(rst_n), .in_valid(l3_in_valid),
         // Connect inputs from MaxPool array
@@ -203,7 +205,8 @@ module main (
         .out_data(final_score),
         .out_valid(fc_out_valid),
         .class_out(class_out),
-        .class_valid(class_valid)
+        .class_valid(class_valid),
+        .class_value(class_value)
     );
 
 endmodule
