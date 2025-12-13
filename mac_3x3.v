@@ -24,9 +24,9 @@ module mac_3x3 #(
         input [7:0] val;
         begin
             if (INPUT_IS_SIGNED)
-                to_signed_input = $signed(val);      // -2 (254) -> -2
+                to_signed_input = $signed(val);
             else
-                to_signed_input = $signed({1'b0, val}); // 254 -> +254
+                to_signed_input = $signed({1'b0, val});
         end
     endfunction
 

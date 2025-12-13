@@ -8,7 +8,7 @@ module conv2d_layer2 #(
   parameter IMG_H       = 28,
   parameter CH_IN       = 8,
   parameter CH_OUT      = 16,
-  parameter QUANT_SHIFT = 10 // can be 8 ~ 12
+  parameter QUANT_SHIFT = 7
 )(
   input            clk,
   input            rst_n,
@@ -40,17 +40,6 @@ module conv2d_layer2 #(
   output reg [7:0] out_conv15
 );
 
-    // if you want to use the clog2 function for verilog2001, you can use the following code
-    // function integer clog2_func;
-    // input integer value;
-    // begin
-    //     value = value - 1;
-    //     for (clog2_func = 0; value > 0; clog2_func = clog2_func + 1) begin
-    //         value = value >> 1;
-    //     end
-    // end
-    // endfunction
-
     localparam KERNEL_SIZE = 3 * 3;
     localparam WEIGHT_SIZE = CH_IN * CH_OUT * KERNEL_SIZE;
     localparam COL_CNT_W   = (IMG_W <= 1) ? 1 : $clog2(IMG_W);
@@ -77,11 +66,10 @@ module conv2d_layer2 #(
     wire [7:0] r2 [0:CH_IN-1];
 
     initial begin
-      // $readmemh("import_file/conv2_selu.txt", weight_data);
       $readmemh("conv2_selu.txt", weight_data);
     end
     // ============================================================
-    // Line Buffers & Window Generators (same as Layer 1)
+    // Line Buffers & Window Generators
     // ============================================================
     genvar i;
 
@@ -132,18 +120,12 @@ module conv2d_layer2 #(
     // ============================================================
     // MAC Units for each output channel
     // ============================================================
-    // MAC outputs for each input channel and output channel
-    // out_mac_per_ch[output_channel][input_channel]
     wire signed [31:0] out_mac_per_ch [0:CH_OUT-1][0:CH_IN-1];
-
-    // Final MAC output for each output channel (sum of all input channels)
     wire signed [31:0] out_mac [0:CH_OUT-1];
 
     genvar out_ch, in_ch;
     generate
-      // For each output channel
       for(out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin
-        // For each input channel
         for(in_ch = 0; in_ch < CH_IN; in_ch = in_ch + 1) begin
           mac_3x3 #(.INPUT_IS_SIGNED(0)) u_mac_3x3 (
             .clk(clk),
@@ -169,12 +151,9 @@ module conv2d_layer2 #(
 
     // ============================================================
     // Sum all input channels for each output channel
-    // Using generate to create adder tree for better synthesis
     // ============================================================
     generate
       for(out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin
-        // Create adder tree: sum all CH_IN channels
-        // For 8 channels, we can do: ((ch0+ch1)+(ch2+ch3)) + ((ch4+ch5)+(ch6+ch7))
         wire signed [31:0] sum_stage1 [0:3];
         wire signed [31:0] sum_stage2 [0:1];
 
@@ -226,8 +205,10 @@ module conv2d_layer2 #(
     reg [2:0] conv_valid_pipe;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) conv_valid_pipe <= 0;
-        else if (in_valid) conv_valid_pipe <= {conv_valid_pipe[1:0], start_output};
-        else conv_valid_pipe <= {conv_valid_pipe[1:0], 1'b0};
+        else begin
+          if (in_valid) conv_valid_pipe <= {conv_valid_pipe[1:0], start_output};
+          else          conv_valid_pipe <= {conv_valid_pipe[1:0], 1'b0};
+        end
     end
 
 
@@ -236,13 +217,11 @@ module conv2d_layer2 #(
     // ============================================================
     wire signed [7:0] selu_in [0:CH_OUT-1];
     wire signed [7:0] selu_out [0:CH_OUT-1];
-    wire              selu_out_valid [0:CH_OUT-1]; // each channel has valid, theoretically the same
+    wire              selu_out_valid [0:CH_OUT-1];
 
     generate
       for (out_ch = 0; out_ch < CH_OUT; out_ch = out_ch + 1) begin : SELU_GEN
         // Quantization (32-bit -> 8-bit)
-        // Note: SELU LUT accepts signed 8-bit (-128 ~ 127)
-        // Here we need to do Clipping to prevent overflow
         wire signed [31:0] scaled_mac = out_mac[out_ch] >>> QUANT_SHIFT;
 
         assign selu_in[out_ch] = (scaled_mac > 127)  ? 8'sd127 :
@@ -264,11 +243,8 @@ module conv2d_layer2 #(
     // ============================================================
     // 6. Final Output Assignment
     // ============================================================
-    // Directly connect the SELU output to the module output
-    // Because SELU has an Output Register inside, so here is wire connection
 
     always @(*) begin
-      // Only need to look at the Valid of the 0th channel, because all channels are synchronized
       out_valid   = selu_out_valid[0];
 
       out_conv0   = selu_out[0];

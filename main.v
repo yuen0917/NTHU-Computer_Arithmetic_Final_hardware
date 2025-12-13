@@ -15,8 +15,8 @@ module main (
     output signed [31:0] final_score, // Score of the classified class (optional)
     output               fc_out_valid // Score output valid (optional)
 );
-    localparam PADDING = 1;
-    localparam QUANT_SHIFT = 6;
+    localparam PADDING     = 1;
+    localparam QUANT_SHIFT = 7;
     // =========================================================================
     // Layer 1: Conv2d (1 -> 8), 28x28, ReLU
     // =========================================================================

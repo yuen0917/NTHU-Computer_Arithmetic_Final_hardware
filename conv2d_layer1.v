@@ -8,7 +8,7 @@ module conv2d_layer1 #(
     parameter IMG_H       = 28,
     parameter CH_IN       = 1,
     parameter CH_OUT      = 8,
-    parameter QUANT_SHIFT = 10 // can be 8 ~ 12
+    parameter QUANT_SHIFT = 7
 )(
     input            clk,
     input            rst_n,
@@ -24,16 +24,6 @@ module conv2d_layer1 #(
     output reg [7:0] out_conv6,
     output reg [7:0] out_conv7
 );
-    // if you want to use the clog2 function for verilog2001, you can use the following code
-    // function integer clog2_func;
-    // input integer value;
-    // begin
-    //     value = value - 1;
-    //     for (clog2_func = 0; value > 0; clog2_func = clog2_func + 1) begin
-    //         value = value >> 1;
-    //     end
-    // end
-    // endfunction
 
     localparam KERNEL_SIZE = 3 * 3;
     localparam WEIGHT_SIZE = CH_IN * CH_OUT * KERNEL_SIZE;
@@ -131,19 +121,6 @@ module conv2d_layer1 #(
         end
     end
 
-    // ============================================================
-    // correction: Valid determination logic
-    // ============================================================
-    reg input_region_valid;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) input_region_valid <= 0;
-        else if (in_valid) begin
-            if (row_cnt >= 1 || (row_cnt == 0 && col_cnt > 0))
-               input_region_valid <= 1;
-        end
-
-    end
-
     wire start_output;
     wire active_row = (row_cnt >= 1);
     assign start_output = active_row;
@@ -160,14 +137,11 @@ module conv2d_layer1 #(
     // Quantization, ReLU, and Saturation Logic
     // ============================================================
     wire signed [31:0] tmp_mac [0:CH_OUT - 1];
-    wire        [ 7:0] sat_val [0:CH_OUT - 1]; // 改成 wire
+    wire        [ 7:0] sat_val [0:CH_OUT - 1];
 
     generate
         for (i = 0; i < CH_OUT; i = i + 1) begin : GEN_SAT
-            // 1. Quantization & ReLU (Negative handling)
             assign tmp_mac[i] = (out_mac[i] > 0) ? (out_mac[i] >>> QUANT_SHIFT) : 32'd0;
-
-            // 2. Saturation (Overflow handling for uint8)
             assign sat_val[i] = (tmp_mac[i] > 127) ? 8'd127 : tmp_mac[i][7:0];
         end
     endgenerate
@@ -186,11 +160,9 @@ module conv2d_layer1 #(
             out_conv5 <= 0;
             out_conv6 <= 0;
             out_conv7 <= 0;
-        end else if (in_valid) begin
-            // Pipeline delay matching (使用之前測試成功的 conv_valid_pipe)
+        end else begin
             out_valid <= conv_valid_pipe[3];
 
-            // 如果 Valid，將算好的 sat_val 存入 Output Register
             if (conv_valid_pipe[3]) begin
                 out_conv0 <= sat_val[0];
                 out_conv1 <= sat_val[1];
@@ -201,22 +173,6 @@ module conv2d_layer1 #(
                 out_conv6 <= sat_val[6];
                 out_conv7 <= sat_val[7];
             end
-        end else begin
-            out_valid <= 1'b0;
         end
     end
-
-    // ============================================================
-    // DEBUG BLOCK: Print Window Content
-    // ============================================================
-    // always @(posedge clk) begin
-    //     // when the control signal thinks that the current window is valid, print the content
-    //     if (input_region_valid) begin
-    //         $display("[RTL DEBUG] Time=%0t | Cnt=(c:%0d, r:%0d)", $time, col_cnt, row_cnt);
-    //         $display("    Window Row 0: %d %d %d", win00, win01, win02);
-    //         $display("    Window Row 1: %d %d %d", win10, win11, win12);
-    //         $display("    Window Row 2: %d %d %d", win20, win21, win22);
-    //         $display("    -------------------------");
-    //     end
-    // end
 endmodule
