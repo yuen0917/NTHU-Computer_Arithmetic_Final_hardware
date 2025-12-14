@@ -15,3 +15,8 @@ export_test_image.py
 model_sim.py
 gen_sw_l1_trace_for_comparison.py
 run_batch_test.py
+
+# data files
+data/
+__pycache__/
+weights/
