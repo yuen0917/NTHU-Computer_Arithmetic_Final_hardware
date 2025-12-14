@@ -1,19 +1,17 @@
 # VCD files
-conv2d_layer1.vcd
-conv2d_layer2.vcd
-conv2d_layer3.vcd
+*.vcd
 
 # VVP files
-conv2d_layer1_tb.vvp
-conv2d_layer2_tb.vvp
-conv2d_layer3_tb.vvp
+*.vvp
 
 # txt files
-conv1_relu.txt
-conv2_selu.txt
-conv3_gelu.txt
-selu_lut.txt
-gelu_lut.txt
-fc_weights.txt
-fc_biases.txt
-test_image.txt
+*.txt
+
+# python files
+check_data.py
+compare_traces.py
+debug_image.py
+export_test_image.py
+model_sim.py
+gen_sw_l1_trace_for_comparison.py
+run_batch_test.py
