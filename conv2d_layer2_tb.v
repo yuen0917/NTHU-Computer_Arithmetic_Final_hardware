@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 // ============================================================
-// Conv2d Layer 2 Testbench (Robust Version with Flush)
+// Conv2d Layer 2 Testbench
 // ============================================================
 module conv2d_layer2_tb;
 
@@ -14,8 +14,7 @@ module conv2d_layer2_tb;
     parameter CH_OUT        = 16;
     parameter QUANT_SHIFT   = 10;
 
-    // Weight file name
-    parameter W_FILE = "conv2_selu.txt";
+    parameter W_FILE_DUMMY = "conv2_selu.txt";
 
     // ============================================================
     // 2. Signals Declaration
@@ -31,10 +30,8 @@ module conv2d_layer2_tb;
     wire         out_valid;
     wire [7:0]   out_conv [0:15];
 
-    // Connect DUT's wire to array wire for easier access
     wire [7:0]   dut_out_wire [0:15];
 
-    // Assign DUT outputs to array
     assign out_conv[0]  = dut_out_wire[0];
     assign out_conv[1]  = dut_out_wire[1];
     assign out_conv[2]  = dut_out_wire[2];
@@ -52,15 +49,15 @@ module conv2d_layer2_tb;
     assign out_conv[14] = dut_out_wire[14];
     assign out_conv[15] = dut_out_wire[15];
 
-    // TB memory
-    reg         [7:0]   input_img [0:CH_IN-1][0:IMG_H-1][0:IMG_W-1];
-    reg  signed [7:0]   weights   [0:CH_OUT-1][0:CH_IN-1][0:2][0:2]; // [out][in][row][col]
-    reg  signed [7:0]   golden_out[0:CH_OUT-1][0:IMG_H-1][0:IMG_W-1];
+    reg         [7:0]   input_img [0:CH_IN-1][0:IMG_H*IMG_W-1];
+    reg  signed [7:0]   weights   [0:CH_OUT-1][0:CH_IN-1][0:2][0:2];
+    reg  signed [7:0]   golden_out[0:CH_OUT-1][0:IMG_H*IMG_W-1];
 
     integer i, k, ch, r, c, k_r, k_c, o_ch, i_ch;
     integer file_handle;
     integer err_cnt;
-    integer out_pixel_cnt;
+    integer out_cnt;
+    integer check_r, check_c;
     integer diff;
 
     // ============================================================
@@ -95,198 +92,7 @@ module conv2d_layer2_tb;
     end
 
     // ============================================================
-    // 5. Main Test Flow
-    // ============================================================
-    initial begin
-        // --- 0. Prevent Crash: Create dummy file ---
-        file_handle = $fopen(W_FILE, "w");
-        if (file_handle != 0) $fclose(file_handle);
-
-        $display("==================================================");
-        $display("  Start Simulation (Layer 2) ");
-        $display("==================================================");
-
-        // --- 1. Generate Weights & Inputs ---
-        // (Re-open to write actual content)
-        file_handle = $fopen(W_FILE, "w");
-
-        // Weight order: (out_ch * CH_IN + in_ch)
-        for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
-            for (i_ch = 0; i_ch < CH_IN; i_ch = i_ch + 1) begin
-                for (r = 0; r < 3; r = r + 1) begin
-                    for (c = 0; c < 3; c = c + 1) begin
-                        // Random weights (-10 to 10)
-                        weights[o_ch][i_ch][r][c] = ($random % 21) - 10;
-                        $fdisplay(file_handle, "%h", weights[o_ch][i_ch][r][c]);
-                    end
-                end
-            end
-        end
-        $fclose(file_handle);
-        $display("[TB] Generated Weight File.");
-
-        // Generate Input Image
-        for (ch = 0; ch < CH_IN; ch = ch + 1) begin
-            for (r = 0; r < IMG_H; r = r + 1) begin
-                for (c = 0; c < IMG_W; c = c + 1) begin
-                    input_img[ch][r][c] = $random % 256;
-                end
-            end
-        end
-
-        // --- 2. Load Weights to DUT ---
-        $readmemh(W_FILE, u_dut.weight_data);
-
-        // --- 3. Calculate Golden ---
-        calculate_golden();
-
-        // --- 4. Reset ---
-        rst_n = 1;
-        in_valid = 0;
-        err_cnt = 0;
-        out_pixel_cnt = 0;
-        for (i = 0; i < CH_IN; i = i + 1) in_data[i] = 0;
-
-        #20 rst_n = 0;
-        #20 rst_n = 1;
-        #20;
-
-        // --- 5. Start Streaming ---
-        $display("[TB] Start Streaming Data...");
-        in_valid = 1;
-
-        for (r = 0; r < IMG_H; r = r + 1) begin
-            for (c = 0; c < IMG_W; c = c + 1) begin
-                // Feed 8 channels simultaneously
-                for (ch = 0; ch < CH_IN; ch = ch + 1) begin
-                    in_data[ch] = input_img[ch][r][c];
-                end
-                @(posedge clk);
-            end
-        end
-
-        // --- 6. Flush Pipeline (CRITICAL for Line Buffer Logic) ---
-        $display("[TB] Flushing Pipeline (Sending Dummy Rows)...");
-
-        // Zero out data, KEEP in_valid = 1
-        for (i = 0; i < CH_IN; i = i + 1) in_data[i] = 0;
-
-        // Send dummy rows to push the last valid pixels out of the line buffer
-        repeat(IMG_W * 2) @(posedge clk);
-
-        in_valid = 0;
-
-        // Wait a bit more for final signals to settle
-        repeat(200) @(posedge clk);
-
-        // --- 7. Final Report ---
-        if (err_cnt == 0) begin
-            $display("==================================================");
-            $display("  ALL PASS! Checked %0d pixels.", out_pixel_cnt);
-            $display("==================================================");
-        end else begin
-            $display("==================================================");
-            $display("  FAIL! Found %0d errors.", err_cnt);
-            $display("==================================================");
-        end
-
-        $finish;
-    end
-
-    // ============================================================
-    // 6. Output Check (Monitor)
-    // ============================================================
-    integer check_r = 0;
-    integer check_c = 0;
-
-    always @(posedge clk) begin
-        if (out_valid) begin
-
-            // [修改] 註解掉下面這行邊界檢查，改成檢查所有像素
-            // if (check_r >= 1 && check_r < IMG_H-1 && check_c >= 1 && check_c < IMG_W-1) begin
-
-            // 讓它無條件執行檢查
-            if (1) begin
-                for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
-                    diff = dut_out_wire[o_ch] - golden_out[o_ch][check_r][check_c];
-
-                    // 容許 +/- 1 的誤差
-                    if (diff < -1 || diff > 1) begin
-                        $display("[ERROR] Time=%0t Ch%0d @(r:%0d, c:%0d) | Exp: %d | Act: %d",
-                                 $time, o_ch, check_r, check_c,
-                                 golden_out[o_ch][check_r][check_c], dut_out_wire[o_ch]);
-                        err_cnt = err_cnt + 1;
-                    end
-                end
-
-                out_pixel_cnt = out_pixel_cnt + 1;
-            end
-            // else: Skip checking border pixels (已移除)
-
-            // Update check coordinates
-            if (check_c == IMG_W - 1) begin
-                check_c = 0;
-                if (check_r == IMG_H - 1) check_r = 0;
-                else check_r = check_r + 1;
-            end else begin
-                check_c = check_c + 1;
-            end
-        end
-    end
-
-    // ============================================================
-    // 7. Golden Model Task
-    // ============================================================
-    task calculate_golden;
-        reg signed [31:0] sum;
-        reg signed [31:0] mac_val;
-        integer pad_r, pad_c;
-        reg signed [31:0] pixel_val;
-
-        begin
-            $display("[TB] Calculating Golden Model...");
-            for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
-                for (r = 0; r < IMG_H; r = r + 1) begin
-                    for (c = 0; c < IMG_W; c = c + 1) begin
-
-                        sum = 0;
-                        // Convolution over 8 input channels
-                        for (i_ch = 0; i_ch < CH_IN; i_ch = i_ch + 1) begin
-                            for (k_r = 0; k_r < 3; k_r = k_r + 1) begin
-                                for (k_c = 0; k_c < 3; k_c = k_c + 1) begin
-                                    pad_r = r + k_r - 1;
-                                    pad_c = c + k_c - 1;
-
-                                    if (pad_r < 0 || pad_r >= IMG_H || pad_c < 0 || pad_c >= IMG_W) begin
-                                        pixel_val = 0;
-                                    end else begin
-                                        pixel_val = {24'd0, input_img[i_ch][pad_r][pad_c]};
-                                    end
-
-                                    mac_val = pixel_val * weights[o_ch][i_ch][k_r][k_c];
-                                    sum = sum + mac_val;
-                                end
-                            end
-                        end
-
-                        // Quantization
-                        sum = sum >>> QUANT_SHIFT;
-
-                        // Clipping before SELU
-                        if (sum > 127) sum = 127;
-                        else if (sum < -128) sum = -128;
-
-                        // SELU Activation
-                        golden_out[o_ch][r][c] = selu_func(sum);
-                    end
-                end
-            end
-            $display("[TB] Golden Model Done.");
-        end
-    endtask
-
-    // ============================================================
-    // 8. SELU Function
+    // 5. SELU Function
     // ============================================================
     function signed [7:0] selu_func;
         input signed [31:0] in_val;
@@ -298,7 +104,11 @@ module conv2d_layer2_tb;
             alpha  = 1.67326;
 
             if (in_val > 0) begin
-                selu_func = in_val[7:0];
+                x_float = in_val;
+                y_float = lambda * x_float;
+                if (y_float > 127.0) selu_func = 127;
+                else if (y_float < -128.0) selu_func = -128;
+                else selu_func = $rtoi(y_float);
             end else begin
                 x_float = in_val;
                 y_float = lambda * alpha * ($exp(x_float) - 1.0);
@@ -309,5 +119,178 @@ module conv2d_layer2_tb;
             end
         end
     endfunction
+
+    // ============================================================
+    // 6. Golden Model Task
+    // ============================================================
+    task calculate_golden;
+        reg signed [31:0] sum;
+        reg signed [31:0] mac_val;
+        reg [7:0] padded_img [0:CH_IN-1][0:IMG_H + 2*PADDING - 1][0:IMG_W + 2*PADDING - 1];
+        integer y, x, ky, kx;
+        reg signed [31:0] pixel_val;
+
+        begin
+            $display("[TB] Calculating Golden Model...");
+
+            for (ch = 0; ch < CH_IN; ch = ch + 1) begin
+                for (y = 0; y < IMG_H + 2*PADDING; y = y + 1) begin
+                    for (x = 0; x < IMG_W + 2*PADDING; x = x + 1) begin
+                        padded_img[ch][y][x] = 0;
+                    end
+                end
+            end
+
+            for (ch = 0; ch < CH_IN; ch = ch + 1) begin
+                for (y = 0; y < IMG_H; y = y + 1) begin
+                    for (x = 0; x < IMG_W; x = x + 1) begin
+                        padded_img[ch][y+PADDING][x+PADDING] = input_img[ch][y*IMG_W + x];
+                    end
+                end
+            end
+
+            for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
+                for (y = 0; y < IMG_H; y = y + 1) begin
+                    for (x = 0; x < IMG_W; x = x + 1) begin
+
+                        sum = 0;
+                        for (i_ch = 0; i_ch < CH_IN; i_ch = i_ch + 1) begin
+                            for (ky = 0; ky < 3; ky = ky + 1) begin
+                                for (kx = 0; kx < 3; kx = kx + 1) begin
+                                    pixel_val = {24'd0, padded_img[i_ch][y+ky][x+kx]};
+                                    mac_val = pixel_val * weights[o_ch][i_ch][ky][kx];
+                                    sum = sum + mac_val;
+                                end
+                            end
+                        end
+
+                        sum = sum >>> QUANT_SHIFT;
+
+                        if (sum > 127) sum = 127;
+                        else if (sum < -128) sum = -128;
+
+                        golden_out[o_ch][y*IMG_W + x] = selu_func(sum);
+                    end
+                end
+            end
+            $display("[TB] Golden Model Done.");
+        end
+    endtask
+
+    // ============================================================
+    // 7. Main Test Flow
+    // ============================================================
+    initial begin
+        file_handle = $fopen(W_FILE_DUMMY, "w");
+        if (file_handle != 0) $fclose(file_handle);
+
+        $display("==================================================");
+        $display("  Start Simulation (Layer 2) ");
+        $display("==================================================");
+
+        $dumpfile("conv2d_layer2.vcd");
+        $dumpvars(0, conv2d_layer2_tb);
+
+        file_handle = $fopen(W_FILE_DUMMY, "w");
+
+        for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
+            for (i_ch = 0; i_ch < CH_IN; i_ch = i_ch + 1) begin
+                for (r = 0; r < 3; r = r + 1) begin
+                    for (c = 0; c < 3; c = c + 1) begin
+                        weights[o_ch][i_ch][r][c] = ($random % 21) - 10;
+                        $fdisplay(file_handle, "%h", weights[o_ch][i_ch][r][c]);
+                    end
+                end
+            end
+        end
+        $fclose(file_handle);
+        $display("[TB] Generated Weight File.");
+
+        for (ch = 0; ch < CH_IN; ch = ch + 1) begin
+            for (i = 0; i < IMG_H*IMG_W; i = i + 1) begin
+                input_img[ch][i] = $random % 256;
+            end
+        end
+
+        $readmemh(W_FILE_DUMMY, u_dut.weight_data);
+
+        calculate_golden();
+
+        rst_n = 1;
+        in_valid = 0;
+        err_cnt = 0;
+        out_cnt = 0;
+        check_r = 0;
+        check_c = 0;
+        for (i = 0; i < CH_IN; i = i + 1) in_data[i] = 0;
+
+        #20 rst_n = 0;
+        #20 rst_n = 1;
+        #20;
+
+        $display("[TB] Start Streaming Data...");
+        in_valid = 1;
+
+        @(posedge clk);
+
+        for (r = 0; r < IMG_H; r = r + 1) begin
+            for (c = 0; c < IMG_W; c = c + 1) begin
+                for (ch = 0; ch < CH_IN; ch = ch + 1) begin
+                    in_data[ch] = input_img[ch][r*IMG_W + c];
+                end
+                @(posedge clk);
+            end
+        end
+
+        $display("[TB] Flushing Pipeline (Sending Dummy Rows)...");
+
+        for (i = 0; i < CH_IN; i = i + 1) in_data[i] = 0;
+
+        repeat(IMG_W * 2) @(posedge clk);
+
+        in_valid = 0;
+
+        repeat(200) @(posedge clk);
+
+        if (err_cnt == 0) begin
+            $display("==================================================");
+            $display("  ALL PASS! Checked %0d pixels.", out_cnt);
+            $display("==================================================");
+        end else begin
+            $display("==================================================");
+            $display("  FAIL! Found %0d errors.", err_cnt);
+            $display("==================================================");
+        end
+
+        $finish;
+    end
+
+    // ============================================================
+    // 8. Output Check (Monitor)
+    // ============================================================
+    always @(posedge clk) begin
+        if (out_valid) begin
+            if (out_cnt < IMG_W * IMG_H) begin
+                for (o_ch = 0; o_ch < CH_OUT; o_ch = o_ch + 1) begin
+                    diff = dut_out_wire[o_ch] - golden_out[o_ch][out_cnt];
+
+                    if (diff < -1 || diff > 1) begin
+                        $display("[ERROR] Time=%0t Ch%0d @(r:%0d, c:%0d) | Exp: %d | Act: %d",
+                                 $time, o_ch, check_r, check_c,
+                                 golden_out[o_ch][out_cnt], dut_out_wire[o_ch]);
+                        err_cnt = err_cnt + 1;
+                    end
+                end
+                out_cnt = out_cnt + 1;
+
+                if (check_c == IMG_W - 1) begin
+                    check_c = 0;
+                    check_r = check_r + 1;
+                end else begin
+                    check_c = check_c + 1;
+                end
+            end
+        end
+    end
 
 endmodule

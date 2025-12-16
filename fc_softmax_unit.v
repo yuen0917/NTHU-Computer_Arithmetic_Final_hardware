@@ -30,9 +30,7 @@ module fc_softmax_unit #(
   reg signed [31:0] biases  [0:B_SIZE - 1];
 
   initial begin
-    // $readmemh("import_file/fc_weights.txt", weights);
     $readmemh("fc_weights.txt", weights);
-    // $readmemh("import_file/fc_biases.txt", biases);
     $readmemh("fc_biases.txt", biases);
   end
 
@@ -112,11 +110,9 @@ module fc_softmax_unit #(
           end
         end
         S_FIND_MAX: begin
-          // fc output
           out_valid <= 1;
           out_data  <= acc[out_cnt];
 
-          // softmax(argmax) output
           if (out_cnt == 0) begin
             max_val     <= acc[0];
             class_out   <= 0;

@@ -11,12 +11,9 @@ module gelu_lut_act (
     output reg  signed [7:0] out_data
 );
 
-    // Declare 256 8-bit memory spaces
     reg signed [7:0] gelu_table [0:255];
 
-    // Initialization: Read the pre-calculated GELU values
     initial begin
-        // $readmemh("import_file/gelu_lut.txt", gelu_table);
         $readmemh("gelu_lut.txt", gelu_table);
     end
 
@@ -26,9 +23,6 @@ module gelu_lut_act (
             out_data  <= 8'd0;
         end else if (in_valid) begin
             out_valid <= 1'b1;
-            // Force to Unsigned, avoid negative index causing return X
-            // -1 (8'hFF) will read index 255
-            // -128 (8'h80) will read index 128
             out_data  <= gelu_table[$unsigned(in_data)];
         end else begin
             out_valid <= 1'b0;

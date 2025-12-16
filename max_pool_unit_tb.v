@@ -10,12 +10,11 @@ module max_pool_unit_tb;
     parameter IMG_W = 28;
     parameter IMG_H = 28;
 
-    // The width and height after output are half of the original image
     parameter OUT_W = IMG_W / 2;
     parameter OUT_H = IMG_H / 2;
 
-    localparam TOTAL_PIXELS_IN  = IMG_W * IMG_H;       // Total pixels in the input image
-    localparam TOTAL_PIXELS_OUT = OUT_W * OUT_H;       // Total pixels in the output image
+    localparam TOTAL_PIXELS_IN  = IMG_W * IMG_H;
+    localparam TOTAL_PIXELS_OUT = OUT_W * OUT_H;
 
     // ============================================================
     // 2. Signals Declaration
@@ -30,7 +29,7 @@ module max_pool_unit_tb;
 
     // Test data storage area
     reg  [7:0]   input_img   [0:TOTAL_PIXELS_IN-1];
-    reg  [7:0]   expected_img[0:TOTAL_PIXELS_OUT-1]; // Golden Model results
+    reg  [7:0]   expected_img[0:TOTAL_PIXELS_OUT-1];
 
     // Loop and counter variables
     integer i;
@@ -64,7 +63,6 @@ module max_pool_unit_tb;
 
     // ============================================================
     // 5. Golden Model Calculation Task
-    //    Simulate the software behavior of 2x2 Max Pooling
     // ============================================================
     task calculate_golden;
         reg signed [7:0] p0, p1, p2, p3;
@@ -78,22 +76,17 @@ module max_pool_unit_tb;
             for (r = 0; r < OUT_H; r = r + 1) begin
                 for (c = 0; c < OUT_W; c = c + 1) begin
 
-                    // Find the top-left corner coordinates of the 2x2 block in the input image (2r, 2c)
-                    // Convert to 1D array index
                     idx_in_base = (r * 2) * IMG_W + (c * 2);
 
-                    // Get the four pixels of the 2x2 block
-                    p0 = input_img[idx_in_base];             // Top-Left
-                    p1 = input_img[idx_in_base + 1];         // Top-Right
-                    p2 = input_img[idx_in_base + IMG_W];     // Bottom-Left
-                    p3 = input_img[idx_in_base + IMG_W + 1]; // Bottom-Right
+                    p0 = input_img[idx_in_base];
+                    p1 = input_img[idx_in_base + 1];
+                    p2 = input_img[idx_in_base + IMG_W];
+                    p3 = input_img[idx_in_base + IMG_W + 1];
 
-                    // Find the maximum value
                     max1 = ($signed(p0) > $signed(p1)) ? p0 : p1;
                     max2 = ($signed(p2) > $signed(p3)) ? p2 : p3;
                     final_max = ($signed(max1) > $signed(max2)) ? max1 : max2;
 
-                    // Store the expected result array
                     idx_out = r * OUT_W + c;
                     expected_img[idx_out] = final_max;
                 end
@@ -105,7 +98,6 @@ module max_pool_unit_tb;
     // 6. Main Test Flow
     // ============================================================
     initial begin
-        // Waveform file setting
         $dumpfile("max_pool_wave.vcd");
         $dumpvars(0, max_pool_unit_tb);
 
@@ -128,14 +120,13 @@ module max_pool_unit_tb;
 
         // ========================================================
         // Test Case 2: Incremental Values
-        // Incremental values 0, 1, 2... increasing, to observe if the maximum value is selected
         // ========================================================
         test_case = 2;
         $display("\n=== Test Case 2: Incremental Values (0..%0d) ===", TOTAL_PIXELS_IN-1);
 
         // 1. Prepare data
         for (i = 0; i < TOTAL_PIXELS_IN; i = i + 1) begin
-            input_img[i] = i % 256; // Ensure within 8-bit range
+            input_img[i] = i % 256;
         end
 
         // 2. Calculate Golden
@@ -144,9 +135,9 @@ module max_pool_unit_tb;
         // 3. Reset DUT
         #10 rst_n = 0; #20 rst_n = 1; #10;
 
-        // 4. Send data and compare实时
+        // 4. Send data and compare
         in_valid = 1;
-        out_cnt  = 0; // Used to track the current comparison to the number of outputs
+        out_cnt  = 0;
 
         $display("[TB Info] Streaming data and checking output...");
 
@@ -155,11 +146,8 @@ module max_pool_unit_tb;
 
             @(posedge clk);
 
-            // Add Hold Time to prevent Race Condition
             #1;
 
-            // Check output
-            // Because MaxPool is streaming output, out_valid will be pulled high at specific time points
             if (out_valid) begin
                 if (out_cnt >= TOTAL_PIXELS_OUT) begin
                     $display("[ERROR] Received more outputs than expected!");
@@ -169,16 +157,11 @@ module max_pool_unit_tb;
                              out_cnt, expected_img[out_cnt], out_data);
                     err_cnt = err_cnt + 1;
                 end
-                // To avoid flooding the screen, only print the first few successful ones, or print if there is an error
-                // else begin
-                //    $display("[PASS] Output #%0d | Exp=%3d | Act=%3d", out_cnt, expected_img[out_cnt], out_data);
-                // end
                 out_cnt = out_cnt + 1;
             end
         end
-        in_valid = 0; // End input
+        in_valid = 0;
 
-        // Ensure the correct number of outputs are received
         if (out_cnt !== TOTAL_PIXELS_OUT) begin
             $display("[ERROR] Test Case %0d | Expected %0d outputs, received %0d",
                      test_case, TOTAL_PIXELS_OUT, out_cnt);
@@ -213,7 +196,7 @@ module max_pool_unit_tb;
         for (i = 0; i < TOTAL_PIXELS_IN; i = i + 1) begin
             in_data = input_img[i];
             @(posedge clk);
-            #1; // Hold time fix
+            #1;
 
             if (out_valid) begin
                 if (out_cnt < TOTAL_PIXELS_OUT) begin

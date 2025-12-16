@@ -8,15 +8,14 @@
 *.txt
 
 # python files
-check_data.py
-compare_traces.py
-debug_image.py
-export_test_image.py
-model_sim.py
-gen_sw_l1_trace_for_comparison.py
-run_batch_test.py
+*.py
 
 # data files
 data/
 __pycache__/
 weights/
+
+# some files
+conv2d_layer1_tb_verify.v
+conv_fixed_version.zip
+debug_tb.v

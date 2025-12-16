@@ -20,10 +20,6 @@ module global_avg_pool_unit #(
   reg  signed [15:0] sum_acc;
   reg         [ 7:0] pixel_cnt;
 
-  wire signed [15:0] current_sum;
-  assign current_sum = sum_acc + $signed(in_data);
-
-
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       sum_acc   <= 0;
@@ -33,13 +29,13 @@ module global_avg_pool_unit #(
     end else if (in_valid) begin
       if (pixel_cnt == TOTAL_PIXELS - 1) begin
         // out_data  <= current_sum/TOTAL_PIXELS;
-        out_data  <= (current_sum * $signed(24'd167)) >>> 15;
+        out_data  <= ((sum_acc + $signed(in_data)) * $signed(24'd167)) >>> 15;
         out_valid <= 1;
         pixel_cnt <= 0;
         sum_acc   <= 0;
       end else begin
         pixel_cnt <= pixel_cnt + 1;
-        sum_acc   <= current_sum;
+        sum_acc   <= sum_acc + $signed(in_data);
         out_valid <= 0;
       end
     end else begin
